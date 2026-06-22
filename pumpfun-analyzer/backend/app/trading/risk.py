@@ -1,0 +1,107 @@
+"""İşlem öncesi risk denetimleri ve limit yönetimi.
+
+Tüm parametreler panelden (settings/risk_rules) değiştirilebilir. Motor her
+işlem öncesi bu kontrolleri çalıştırır; başarısız olursa işlem reddedilir ve
+gerekçe döner.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class RiskConfig:
+    enabled: bool = False                  # canlı/paper işlem motoru aktif mi
+    mode: str = "paper"                    # paper | alerts_only | live
+    live_confirmed: bool = False           # kullanıcı canlı riski onayladı mı
+
+    fixed_sol_amount: float = 0.05         # işlem başına sabit SOL
+    proportional: bool = False             # hedef cüzdan miktarına orantılı
+    proportional_factor: float = 1.0
+    max_position_sol: float = 0.5
+    max_daily_spend_sol: float = 2.0
+    max_daily_loss_sol: float = 1.0
+    max_slippage: float = 0.15             # %15
+    priority_fee_sol: float = 0.0005
+    min_wallet_score: float = 70.0
+    min_token_score: float = 70.0
+    max_open_positions_per_token: int = 1
+    max_follow_lag_seconds: int = 60
+    min_liquidity_sol: float = 5.0
+
+    emergency_stop: bool = False
+    blocked_wallets: list[str] = field(default_factory=list)
+    blocked_tokens: list[str] = field(default_factory=list)
+    only_wallets: list[str] = field(default_factory=list)  # boşsa tümü
+
+
+@dataclass
+class DayState:
+    spent_sol: float = 0.0
+    loss_sol: float = 0.0
+    open_positions: dict[str, int] = field(default_factory=dict)  # token -> adet
+
+
+@dataclass
+class RiskDecision:
+    allowed: bool
+    reasons: list[str] = field(default_factory=list)
+    sol_amount: float = 0.0
+
+
+def evaluate_buy(
+    cfg: RiskConfig,
+    day: DayState,
+    *,
+    wallet_address: str,
+    token_mint: str,
+    wallet_score: float,
+    token_score: float,
+    token_liquidity_sol: float,
+    token_sellable: bool,
+    follow_lag_seconds: float,
+    leader_sol_amount: float | None = None,
+) -> RiskDecision:
+    reasons: list[str] = []
+
+    if cfg.emergency_stop:
+        return RiskDecision(False, ["Acil durdurma aktif"])
+    if not cfg.enabled or cfg.mode == "alerts_only":
+        return RiskDecision(False, ["İşlem motoru kapalı (yalnızca bildirim)"])
+    if cfg.mode == "live" and not cfg.live_confirmed:
+        return RiskDecision(False, ["Canlı işlem onaylanmamış"])
+
+    if wallet_address in cfg.blocked_wallets:
+        reasons.append("Cüzdan engellenmiş")
+    if token_mint in cfg.blocked_tokens:
+        reasons.append("Token engellenmiş")
+    if cfg.only_wallets and wallet_address not in cfg.only_wallets:
+        reasons.append("Cüzdan seçili kopyalama listesinde değil")
+    if wallet_score < cfg.min_wallet_score:
+        reasons.append(f"Cüzdan puanı < {cfg.min_wallet_score}")
+    if token_score < cfg.min_token_score:
+        reasons.append(f"Token puanı < {cfg.min_token_score}")
+    if not token_sellable:
+        reasons.append("Token satılabilir değil (honeypot riski)")
+    if token_liquidity_sol < cfg.min_liquidity_sol:
+        reasons.append("Likidite eşik altında")
+    if follow_lag_seconds > cfg.max_follow_lag_seconds:
+        reasons.append("İşlem gecikmesi izleme penceresini aştı")
+
+    # Miktar hesapla
+    if cfg.proportional and leader_sol_amount is not None:
+        amount = leader_sol_amount * cfg.proportional_factor
+    else:
+        amount = cfg.fixed_sol_amount
+    amount = min(amount, cfg.max_position_sol)
+
+    if day.spent_sol + amount > cfg.max_daily_spend_sol:
+        reasons.append("Günlük harcama limiti aşılır")
+    if day.loss_sol >= cfg.max_daily_loss_sol:
+        reasons.append("Günlük zarar limitine ulaşıldı")
+    if day.open_positions.get(token_mint, 0) >= cfg.max_open_positions_per_token:
+        reasons.append("Token başına maksimum açık pozisyon")
+
+    if reasons:
+        return RiskDecision(False, reasons, amount)
+    return RiskDecision(True, ["Tüm risk kontrolleri geçildi"], amount)

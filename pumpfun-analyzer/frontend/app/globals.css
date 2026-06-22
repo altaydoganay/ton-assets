@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f8fafc;
+  --card: #ffffff;
+  --border: #e2e8f0;
+  --text: #0f172a;
+  --muted: #64748b;
+}
+.dark {
+  --bg: #0b1120;
+  --card: #111827;
+  --border: #1f2937;
+  --text: #e5e7eb;
+  --muted: #94a3b8;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border p-4 shadow-sm;
+    background: var(--card);
+    border-color: var(--border);
+  }
+  .muted { color: var(--muted); }
+  .btn {
+    @apply rounded-lg px-3 py-2 text-sm font-medium transition;
+    background: var(--card);
+    border: 1px solid var(--border);
+  }
+  .btn:hover { border-color: #14b8a6; }
+  .btn-primary {
+    @apply rounded-lg px-3 py-2 text-sm font-semibold text-white transition;
+    background: #14b8a6;
+  }
+  .btn-primary:hover { background: #0f766e; }
+  .nav-link {
+    @apply flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition;
+  }
+  .nav-link:hover { background: rgba(20,184,166,0.1); }
+  .nav-link.active { background: rgba(20,184,166,0.15); color: #14b8a6; font-weight: 600; }
+  .input {
+    @apply w-full rounded-lg px-3 py-2 text-sm;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  .badge { @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium; }
+}

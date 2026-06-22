@@ -1,0 +1,82 @@
+"""Uygulama yapılandırması.
+
+Tüm gizli anahtarlar ve sağlayıcı ayarları ortam değişkenlerinden (.env)
+okunur. Hiçbir API anahtarı veya özel anahtar kaynak koduna gömülmez.
+"""
+from __future__ import annotations
+
+from functools import lru_cache
+from typing import Literal
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
+    # --- Genel ---
+    app_name: str = "Pump.fun Cüzdan Analizcisi"
+    environment: Literal["development", "production", "test"] = "development"
+    api_prefix: str = "/api"
+    secret_key: str = Field(default="degistir-bu-anahtari", description="Uygulama imza anahtarı")
+
+    # --- Veritabanı ---
+    database_url: str = Field(
+        default="postgresql+psycopg://pump:pump@localhost:5432/pumpfun",
+        description="SQLAlchemy bağlantı dizesi",
+    )
+
+    # --- Redis / Kuyruk ---
+    redis_url: str = "redis://localhost:6379/0"
+    celery_broker_url: str = "redis://localhost:6379/1"
+    celery_result_backend: str = "redis://localhost:6379/2"
+
+    # --- Veri sağlayıcıları (adapter seçimi) ---
+    # Birincil zincir verisi sağlayıcısı: "rpc" | "helius"
+    chain_provider: str = "rpc"
+    # Fiyat/piyasa verisi sağlayıcısı: "birdeye" | "dexscreener"
+    market_provider: str = "dexscreener"
+
+    solana_rpc_url: str = "https://api.mainnet-beta.solana.com"
+    solana_ws_url: str = "wss://api.mainnet-beta.solana.com"
+    helius_api_key: str = ""
+    helius_rpc_url: str = ""
+    birdeye_api_key: str = ""
+    dexscreener_base_url: str = "https://api.dexscreener.com"
+
+    # --- Telegram ---
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    telegram_enabled: bool = False
+
+    # --- Güvenlik / Cüzdan kasası ---
+    # Trading cüzdanı keystore'unu şifrelemek için kullanılan parola.
+    # Boş bırakılırsa canlı işlem devre dışı kalır.
+    keystore_passphrase: str = ""
+    keystore_path: str = "./data/keystore.json"
+
+    # --- İşlem modu ---
+    # "paper" | "alerts_only" | "live"
+    trading_mode: Literal["paper", "alerts_only", "live"] = "paper"
+    live_trading_confirmed: bool = False
+
+    # --- Eşikler (varsayılan; veritabanındaki settings tablosu önceliklidir) ---
+    min_wallet_score: float = 70.0
+    min_token_score: float = 70.0
+
+    cors_origins: str = "http://localhost:3000"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()
