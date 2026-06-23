@@ -2,7 +2,9 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm install --omit=dev=false
+# Tüm bağımlılıklar (devDependencies dahil) kurulur; build için tailwind,
+# typescript vb. gereklidir.
+RUN npm ci || npm install
 
 # ---- Build ----
 FROM node:22-alpine AS builder
