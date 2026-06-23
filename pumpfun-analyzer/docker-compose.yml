@@ -9,7 +9,7 @@ services:
       - pgdata:/var/lib/postgresql/data
     # Yalnızca iç ağ; ana makine portu açılmaz (5432 çakışmasını önler).
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pump}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pump} -d ${POSTGRES_DB:-pumpfun}"]
       interval: 5s
       timeout: 5s
       retries: 10
