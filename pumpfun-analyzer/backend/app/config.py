@@ -46,8 +46,13 @@ class Settings(BaseSettings):
     helius_rpc_url: str = ""
     # RPC hız limiti koruması: istekler arası asgari süre (sn) ve 429 tekrar sayısı.
     # Helius ücretsiz katman ~10 istek/sn; 0.12 ≈ 8 istek/sn güvenli.
+    # NOT: Bu throttle yalnızca arka plan KEŞİF analizinde uygulanır; canlı alım
+    # yolunda (hız kritik) throttle KAPALIDIR.
     rpc_min_interval_seconds: float = 0.12
     rpc_rate_limit_retries: int = 6
+    # Canlı alımda token analizi önbelleği: token bu süre içinde puanlandıysa
+    # yeniden analiz edilmez (anında karar = düşük gecikme).
+    token_score_cache_seconds: int = 45
     birdeye_api_key: str = ""
     dexscreener_base_url: str = "https://api.dexscreener.com"
 

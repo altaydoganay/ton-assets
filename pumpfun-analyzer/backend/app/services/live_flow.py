@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from ..adapters.base import ChainProvider, MarketProvider
 from ..adapters.pumpportal import PumpPortalTrade, PumpPortalTrader
 from ..adapters.registry import build_chain_provider, build_market_provider
+from ..config import settings
 from ..core.analysis.swap_detection import DetectedSwap
 from ..models import Token, TokenStatus, Wallet, WalletStatus
 from ..notifications.telegram import AlertContent, TelegramNotifier, short_addr
@@ -30,7 +31,7 @@ from ..trading.engine import CopyTradeEngine, TradeContext, LiveTradingNotConfig
 from ..trading.risk import RiskConfig
 from .pipeline import store_swap
 from .settings_service import get_setting
-from .token_analysis import analyze_token
+from .token_analysis import assess_token
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +104,8 @@ def handle_trade_event(
 ) -> dict:
     """Bir PumpPortal trade olayını uçtan uca işler. Sonuç özetini döner."""
     now = int(datetime.now(timezone.utc).timestamp())
-    chain = chain or build_chain_provider()
+    # Canlı alım yolu: throttle KAPALI (düşük gecikme).
+    chain = chain or build_chain_provider(throttle=False)
     market = market or build_market_provider()
 
     # 1) swap'ı kaydet (transfer değil; PumpPortal yalnızca gerçek swap yayınlar)
@@ -117,28 +119,30 @@ def handle_trade_event(
     if not wallet or wallet.status != WalletStatus.tracked.value or (wallet.latest_score or 0) < wallet_threshold:
         return {"action": "ignored", "reason": "cüzdan takipte değil"}
 
-    # 3) tokeni anlık analiz et
-    token, token_result = analyze_token(db, trade.mint, chain, market)
+    # 3) tokeni değerlendir (önbellekli, hızlı) — canlı alımda gecikmeyi azaltır
+    assessment = assess_token(db, trade.mint, chain, market, settings.token_score_cache_seconds)
+    token = assessment.token
     token_threshold = get_setting(db, "thresholds").get("token", 70.0)
-    token_ok = (not token_result.vetoed) and token_result.total >= token_threshold
+    token_ok = (not assessment.vetoed) and assessment.total >= token_threshold
 
     market_price_sol = swap.price_sol
-    liquidity_sol = float((token.metrics or {}).get("liquidity_sol", 0.0))
+    liquidity_sol = assessment.liquidity_sol
 
     summary = {
         "wallet": short_addr(trade.trader),
         "token": short_addr(trade.mint),
         "side": trade.side,
         "wallet_score": wallet.latest_score,
-        "token_score": token_result.total,
+        "token_score": assessment.total,
         "token_ok": token_ok,
+        "cached": assessment.cached,
     }
 
     if trade.side == "sell":
         # Hedef satışı yansıt (paper/canlı). Yüzde bilgisini bilemediğimiz için
         # tamamı varsayımıyla yansıtırız (FULL); kısmi oran ileride event'ten gelebilir.
         engine = get_engine(db, signer=signer)
-        ctx = _ctx(trade, wallet, token_result, market_price_sol, liquidity_sol)
+        ctx = _ctx(trade, wallet, assessment.total, assessment.vetoed, market_price_sol, liquidity_sol)
         engine.on_leader_sell(db, ctx, leader_sell_fraction=1.0)
         summary["action"] = "mirror_sell"
         return summary
@@ -151,12 +155,12 @@ def handle_trade_event(
 
     # 4) Telegram bildirimi (dedup'lı) — işlemden bağımsız
     notifier = notifier or TelegramNotifier()
-    risk_flags = list(token_result.veto_reasons) + list(wallet.risk_flags or [])
+    risk_flags = list(assessment.veto_reasons) + list(wallet.risk_flags or [])
     content = AlertContent(
         signature=trade.signature, wallet_address=trade.trader,
         wallet_label=wallet.label, wallet_score=wallet.latest_score or 0,
         token_mint=trade.mint, token_name=token.symbol or token.name,
-        token_score=token_result.total, amount_token=trade.token_amount,
+        token_score=assessment.total, amount_token=trade.token_amount,
         sol_value=trade.sol_amount, usd_value=None,
         timestamp=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         risk_flags=risk_flags, auto_traded=False,
@@ -167,7 +171,7 @@ def handle_trade_event(
     engine = get_engine(db, signer=signer)
     decision = None
     if engine.cfg.enabled and engine.cfg.mode != "alerts_only":
-        ctx = _ctx(trade, wallet, token_result, market_price_sol, liquidity_sol)
+        ctx = _ctx(trade, wallet, assessment.total, assessment.vetoed, market_price_sol, liquidity_sol)
         try:
             decision = engine.on_leader_buy(db, ctx)
             if alert and decision and decision.allowed:
@@ -184,14 +188,15 @@ def handle_trade_event(
     return summary
 
 
-def _ctx(trade: PumpPortalTrade, wallet: Wallet, token_result, price_sol: float, liquidity_sol: float) -> TradeContext:
+def _ctx(trade: PumpPortalTrade, wallet: Wallet, token_total: float, token_vetoed: bool,
+         price_sol: float, liquidity_sol: float) -> TradeContext:
     return TradeContext(
         wallet_address=trade.trader,
         token_mint=trade.mint,
         wallet_score=wallet.latest_score or 0,
-        token_score=token_result.total,
+        token_score=token_total,
         token_liquidity_sol=liquidity_sol,
-        token_sellable=not token_result.vetoed,
+        token_sellable=not token_vetoed,
         follow_lag_seconds=0.0,
         market_price_sol=price_sol,
         leader_sol_amount=trade.sol_amount,

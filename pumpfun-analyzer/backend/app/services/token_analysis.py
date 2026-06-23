@@ -15,17 +15,63 @@ gibi sunulmaz. Tam holder de-etiketleme ileride genişletilebilir.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
 from ..adapters.base import ChainProvider, MarketProvider
 from ..adapters.pumpfun import infer_stage
 from ..core.scoring.token_scoring import TokenMetrics, TokenScoreResult, score_token
-from ..models import Token
+from ..models import Token, TokenStatus
 from .analysis_service import get_or_create_token, persist_token_score
 from .settings_service import get_setting
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TokenAssessment:
+    token: Token
+    total: float
+    vetoed: bool
+    veto_reasons: list
+    liquidity_sol: float
+    cached: bool
+
+
+def assess_token(
+    db: Session, mint: str, chain: ChainProvider, market: MarketProvider, cache_seconds: int = 45
+) -> TokenAssessment:
+    """Canlı alım yolu için hızlı token değerlendirmesi.
+
+    Token son `cache_seconds` içinde puanlandıysa yeniden analiz ETMEZ; saklı
+    puanı kullanır (anında karar = düşük gecikme). Aksi halde anlık analiz yapar.
+    """
+    token = db.query(Token).filter(Token.mint == mint).first()
+    if token and token.latest_score is not None and token.last_analyzed is not None:
+        la = token.last_analyzed
+        if la.tzinfo is None:
+            la = la.replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - la).total_seconds()
+        if age < cache_seconds:
+            return TokenAssessment(
+                token=token,
+                total=token.latest_score,
+                vetoed=(token.status == TokenStatus.vetoed.value),
+                veto_reasons=list(token.risk_flags or []),
+                liquidity_sol=float((token.metrics or {}).get("liquidity_sol", 0.0)),
+                cached=True,
+            )
+    token, result = analyze_token(db, mint, chain, market)
+    return TokenAssessment(
+        token=token,
+        total=result.total,
+        vetoed=result.vetoed,
+        veto_reasons=result.veto_reasons,
+        liquidity_sol=float((token.metrics or {}).get("liquidity_sol", 0.0)),
+        cached=False,
+    )
 
 
 def build_token_metrics(mint: str, chain: ChainProvider, market: MarketProvider) -> TokenMetrics:

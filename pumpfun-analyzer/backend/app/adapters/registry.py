@@ -13,9 +13,11 @@ from .helius import HeliusAdapter
 from .rpc import SolanaRpcAdapter
 
 
-def build_chain_provider() -> ChainProvider:
+def build_chain_provider(throttle: bool = True) -> ChainProvider:
+    """Zincir sağlayıcı. `throttle=False` (canlı alım yolu) hız limiti beklemesi
+    uygulamaz — düşük gecikme için. Arka plan keşfinde `throttle=True` kalır."""
     provider = settings.chain_provider.lower()
-    mi = settings.rpc_min_interval_seconds
+    mi = settings.rpc_min_interval_seconds if throttle else 0.0
     rr = settings.rpc_rate_limit_retries
     if provider == "helius" and settings.helius_api_key:
         return HeliusAdapter(

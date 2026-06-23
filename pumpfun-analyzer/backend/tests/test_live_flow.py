@@ -113,6 +113,24 @@ def test_token_vetoed_skips_alert(db):
     assert db.query(Alert).filter(Alert.signature == "vetoevt").count() == 0
 
 
+def test_token_assessment_cached_second_time(db):
+    w = _make_tracked_wallet(db, addr="Leader555555555555555555555555555555555555")
+
+    class CountingChain(FakeChain):
+        def __init__(self): super().__init__(); self.mint_calls = 0
+        def get_mint_info(self, mint):
+            self.mint_calls += 1
+            return super().get_mint_info(mint)
+
+    chain = CountingChain()
+    umint = "CacheUniqueMint1111111111111111111111111111"
+    r1 = handle_trade_event(db, _trade(w.address, mint=umint, sig="c1"), chain=chain, market=FakeMarket(), notifier=TelegramNotifier())
+    r2 = handle_trade_event(db, _trade(w.address, mint=umint, sig="c2"), chain=chain, market=FakeMarket(), notifier=TelegramNotifier())
+    assert r1["cached"] is False     # ilk seferde analiz edildi
+    assert r2["cached"] is True      # ikinci seferde önbellekten (anında)
+    assert chain.mint_calls == 1     # token ikinci kez zincire sorulmadı
+
+
 def test_live_mode_uses_signer(db):
     w = _make_tracked_wallet(db, addr="Leader444444444444444444444444444444444444")
     set_setting(db, "risk", {"enabled": True, "mode": "live", "live_confirmed": True,
