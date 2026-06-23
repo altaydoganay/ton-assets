@@ -1,6 +1,44 @@
 import pytest
 
-from app.adapters.rpc import SolanaRpcAdapter, RpcUnavailableError
+from app.adapters.rpc import SolanaRpcAdapter, RpcUnavailableError, RateLimitError
+
+
+def test_rate_limit_retries_same_endpoint():
+    calls = {"n": 0}
+
+    def transport(url, payload):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise RateLimitError("HTTP 429")
+        return {"result": "ok"}
+
+    # min_interval=0 ki test hızlı olsun; rate_limit_retries yeterli
+    adapter = SolanaRpcAdapter(endpoints=["https://a"], transport=transport, rate_limit_retries=5)
+    # backoff'u sıfırla (testi hızlandır)
+    import app.adapters.rpc as rpcmod
+    orig_sleep = rpcmod.time.sleep
+    rpcmod.time.sleep = lambda *_: None
+    try:
+        res = adapter.get_token_supply("m")
+    finally:
+        rpcmod.time.sleep = orig_sleep
+    assert res == "ok"
+    assert calls["n"] == 3  # 2 kez 429, 3. denemede başarı
+
+
+def test_rate_limit_gives_up_after_retries():
+    def transport(url, payload):
+        raise RateLimitError("HTTP 429")
+
+    adapter = SolanaRpcAdapter(endpoints=["https://a"], transport=transport, rate_limit_retries=2)
+    import app.adapters.rpc as rpcmod
+    orig_sleep = rpcmod.time.sleep
+    rpcmod.time.sleep = lambda *_: None
+    try:
+        with pytest.raises(RpcUnavailableError):
+            adapter.get_token_supply("m")
+    finally:
+        rpcmod.time.sleep = orig_sleep
 
 
 def test_failover_to_second_endpoint():

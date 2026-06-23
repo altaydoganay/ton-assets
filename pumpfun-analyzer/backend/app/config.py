@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     solana_ws_url: str = "wss://api.mainnet-beta.solana.com"
     helius_api_key: str = ""
     helius_rpc_url: str = ""
+    # RPC hız limiti koruması: istekler arası asgari süre (sn) ve 429 tekrar sayısı.
+    # Helius ücretsiz katman ~10 istek/sn; 0.12 ≈ 8 istek/sn güvenli.
+    rpc_min_interval_seconds: float = 0.12
+    rpc_rate_limit_retries: int = 6
     birdeye_api_key: str = ""
     dexscreener_base_url: str = "https://api.dexscreener.com"
 
@@ -81,9 +85,9 @@ class Settings(BaseSettings):
     # Aynı anda izlenen (trade aboneliği açık) maksimum token sayısı
     discovery_max_watched_tokens: int = 80
     # Her arka plan döngüsünde analiz edilecek aday sayısı (Helius limitini koru)
-    discovery_batch_size: int = 5
+    discovery_batch_size: int = 3
     # Aday analizinde taranacak işlem sayısı
-    discovery_ingest_limit: int = 80
+    discovery_ingest_limit: int = 40
     # Aday analiz döngüsü aralığı (saniye) — Celery beat
     discovery_interval_seconds: int = 120
 

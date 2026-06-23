@@ -15,13 +15,18 @@ from .rpc import SolanaRpcAdapter
 
 def build_chain_provider() -> ChainProvider:
     provider = settings.chain_provider.lower()
+    mi = settings.rpc_min_interval_seconds
+    rr = settings.rpc_rate_limit_retries
     if provider == "helius" and settings.helius_api_key:
-        return HeliusAdapter(api_key=settings.helius_api_key, rpc_url=settings.helius_rpc_url or None)
+        return HeliusAdapter(
+            api_key=settings.helius_api_key, rpc_url=settings.helius_rpc_url or None,
+            min_interval=mi, rate_limit_retries=rr,
+        )
     # Varsayılan: standart RPC (gerekirse Helius RPC'yi de failover olarak ekle)
     endpoints = [settings.solana_rpc_url]
     if settings.helius_rpc_url:
         endpoints.append(settings.helius_rpc_url)
-    return SolanaRpcAdapter(endpoints=endpoints)
+    return SolanaRpcAdapter(endpoints=endpoints, min_interval=mi, rate_limit_retries=rr)
 
 
 def build_market_provider() -> MarketProvider:
