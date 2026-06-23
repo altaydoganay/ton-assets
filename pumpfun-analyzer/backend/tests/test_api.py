@@ -66,3 +66,24 @@ def test_wallet_flow(db):
 def test_wallet_404(db):
     r = client.get("/api/wallets/yokboyle")
     assert r.status_code == 404
+
+
+def test_add_wallet_endpoint(db, monkeypatch):
+    # Zincir sağlayıcıyı sahte (boş) bir provider ile değiştir — ağ gerekmez.
+    from app.adapters.base import ChainProvider
+
+    class EmptyProvider(ChainProvider):
+        name = "empty"
+        def get_signatures_for_address(self, address, limit=100): return []
+        def get_transaction(self, signature): return None
+        def get_token_supply(self, mint): return None
+        def get_mint_info(self, mint): return None
+
+    import app.api.routes_wallets as rw
+    monkeypatch.setattr(rw, "build_chain_provider", lambda: EmptyProvider())
+
+    r = client.post("/api/wallets", json={"address": "AddedWallet11111111111111111111111111111111", "limit": 10})
+    assert r.status_code == 201
+    body = r.json()
+    assert body["address"] == "AddedWallet11111111111111111111111111111111"
+    assert "latest_score" in body  # puanlandı (örneklem yok => düşük/ineligible)

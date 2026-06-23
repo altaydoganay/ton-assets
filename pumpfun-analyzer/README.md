@@ -127,7 +127,11 @@ anahtar kaynak koduna gömülmez. Öne çıkanlar:
 | `TELEGRAM_*` | Telegram bot ayarları |
 | `TRADING_MODE` | `paper` \| `alerts_only` \| `live` |
 | `LIVE_TRADING_CONFIRMED` | canlı işlem için açık onay |
-| `KEYSTORE_PASSPHRASE`, `KEYSTORE_PATH` | şifreli trading cüzdanı kasası |
+| `KEYSTORE_PASSPHRASE`, `KEYSTORE_PATH` | şifreli trading cüzdanı kasası (yerel imzalama) |
+| `PUMPPORTAL_API_KEY` | PumpPortal Lightning işlem anahtarı (canlı al-sat) |
+| `PUMPPORTAL_DATA_WS` | PumpPortal canlı veri akışı (ücretsiz) |
+| `LIVE_LISTENER_ENABLED` | canlı olay dinleyici servisi |
+| `FRONTEND_PORT`, `BACKEND_PORT` | port çakışmasında değiştirin (örn. 3001) |
 
 ---
 
@@ -210,6 +214,44 @@ kapatılır. Transferler satış olarak yorumlanmaz; yalnızca gerçek swap'lar.
   durdur" arasında seçim sunar.
 
 ---
+
+## Canlı akış: cüzdan ekleme → bildirim → otomatik işlem
+
+Uçtan uca akış (PumpPortal canlı veri + Helius zincir verisi ile):
+
+1. **Cüzdan ekleyin.** Panelde *Keşfedilen Cüzdanlar* sayfasındaki **"Cüzdan Ekle
+   ve Analiz Et"** formuna bir adres girin (veya `POST /api/wallets`). Sistem son
+   işlemleri Helius/RPC'den çeker, FIFO PnL + sınıflandırma + puanlama yapar.
+   Puan ≥ 70 ve uygunsa cüzdan **takip listesine** alınır.
+2. **Dinleyici devreye girer.** `listener` servisi PumpPortal veri akışına
+   (`wss://pumpportal.fun/api/data`) bağlanır ve takipteki cüzdanlara
+   `subscribeAccountTrade` ile abone olur. Takip listesi otomatik tazelenir.
+3. **Olay yakalanır.** Takipteki bir cüzdan bir tokeni **satın aldığında**, sistem
+   o tokeni anlık analiz eder (mint/freeze yetkisi, likidite, ilk-10 yoğunluk).
+   Token puanı ≥ 70 ve veto yoksa:
+   - **Telegram bildirimi** gönderilir (signature bazlı dedup ile, tekrar yok),
+   - **kopya işlem motoru** bağımsız tetiklenir (Telegram beklenmez).
+4. **İşlem yürütülür** (moda göre):
+   - `paper`: simülasyon, `paper_trades`'e kayıt (varsayılan, risksiz),
+   - `live`: **PumpPortal Lightning API** ile gerçek al-sat — özel anahtar
+     PumpPortal tarafında kalır, bizim loglarımıza/DB'mize girmez.
+   Hedef cüzdan satış yaparsa pozisyon ayara göre yansıtılır.
+
+**Canlı al-sat'ı açmak için** (gerçek para):
+```
+TRADING_MODE=live
+LIVE_TRADING_CONFIRMED=true
+PUMPPORTAL_API_KEY=...        # PumpPortal Lightning cüzdan anahtarınız
+```
+ve Risk Ayarları sayfasında **İşlem Motoru = Açık** + limitlerinizi belirleyin.
+PumpPortal Lightning cüzdanına **düşük** bir bakiye yükleyin; ana cüzdanınızı
+kullanmayın. Her işlem öncesi token güvenliği/satılabilirliği yeniden kontrol
+edilir; **acil durdurma** her an yeni işlemleri durdurur.
+
+> Not: Anlık token analizi v1'de "hafif"tir (zincir üstü güvenlik + piyasa
+> likiditesi + ilk-N holder yoğunluğu). Tam holder de-etiketleme (LP/sistem
+> ayrımı, insider/sniper arzı) düşük güven (confidence) ile işaretlenir ve
+> ileride genişletilebilir — eksik veri kesin bilgi gibi sunulmaz.
 
 ## Puanlama formülleri
 

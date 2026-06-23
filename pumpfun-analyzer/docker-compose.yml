@@ -7,8 +7,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-pumpfun}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    # Yalnızca iç ağ; ana makine portu açılmaz (5432 çakışmasını önler).
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pump}"]
       interval: 5s
@@ -17,8 +16,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # Yalnızca iç ağ; ana makine portu açılmaz (6379 çakışmasını önler).
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -34,7 +32,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - keystore_data:/app/data
 
@@ -56,15 +54,26 @@ services:
       - redis
       - backend
 
-  frontend:
-    build: ./frontend
+  # Canlı olay akışı dinleyicisi: PumpPortal'dan takipteki cüzdan işlemlerini
+  # alır, bildirim gönderir ve (ayar açıksa) kopya işlem yapar.
+  listener:
+    build: ./backend
+    command: python -m app.workers.pumpportal_listener
     env_file: .env
-    environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api}
+    depends_on:
+      - backend
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # NEXT_PUBLIC_* derleme anında gömülür; tarayıcı bu adresten API'ye gider.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api}
+    env_file: .env
     depends_on:
       - backend
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
 
 volumes:
   pgdata:

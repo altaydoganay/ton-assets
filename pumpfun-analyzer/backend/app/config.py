@@ -63,6 +63,16 @@ class Settings(BaseSettings):
     trading_mode: Literal["paper", "alerts_only", "live"] = "paper"
     live_trading_confirmed: bool = False
 
+    # --- PumpPortal (canlı veri akışı + işlem gönderimi) ---
+    # İşlem gönderimi sağlayıcısı: şimdilik "pumpportal"
+    trade_provider: str = "pumpportal"
+    pumpportal_api_key: str = ""              # Lightning işlem API anahtarı (GİZLİ)
+    pumpportal_data_ws: str = "wss://pumpportal.fun/api/data"
+    pumpportal_trade_url: str = "https://pumpportal.fun/api/trade"
+    pumpportal_default_pool: str = "auto"     # pump | pumpswap | auto
+    # Canlı olay akışı dinleyicisi açık mı (listener servisi)
+    live_listener_enabled: bool = True
+
     # --- Eşikler (varsayılan; veritabanındaki settings tablosu önceliklidir) ---
     min_wallet_score: float = 70.0
     min_token_score: float = 70.0

@@ -1,13 +1,37 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Wallet, WalletScore, WalletStatus, WalletRelationship
 from ..schemas import WalletDetail, WalletOut, WalletScoreOut
+from ..adapters.registry import build_chain_provider
+from ..adapters.rpc import RpcUnavailableError
+from ..services.analysis_service import get_or_create_wallet
+from ..services.pipeline import ingest_wallet, analyze_wallet
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/wallets", tags=["wallets"])
+
+
+class WalletCreate(BaseModel):
+    address: str
+    label: str | None = None
+    limit: int = 100  # taranacak son işlem sayısı
+
+
+def _ingest_and_score(db: Session, address: str, limit: int):
+    """Cüzdanın işlemlerini çekip puanlar. RPC yoksa açıklayıcı hata döner."""
+    provider = build_chain_provider()
+    try:
+        ingest_wallet(db, provider, address, limit=limit)
+    except RpcUnavailableError as exc:
+        raise HTTPException(503, f"Zincir sağlayıcıya ulaşılamadı (RPC/Helius): {exc}")
+    return analyze_wallet(db, address)
 
 
 @router.get("", response_model=list[WalletOut])
@@ -25,6 +49,32 @@ def list_wallets(
         q = q.filter(Wallet.latest_score >= min_score)
     q = q.order_by(Wallet.latest_score.desc().nullslast()).offset(offset).limit(limit)
     return q.all()
+
+
+@router.post("", response_model=WalletDetail, status_code=201)
+def add_wallet(body: WalletCreate, db: Session = Depends(get_db)):
+    """Cüzdan ekle, son işlemlerini çekip analiz et ve puanla.
+
+    Not: İşlem çekimi RPC/Helius'a bağlıdır; çok sayıda işlemde birkaç dakika
+    sürebilir. `limit` ile taranacak işlem sayısı sınırlanır.
+    """
+    w = get_or_create_wallet(db, body.address, source="manual")
+    if body.label:
+        w.label = body.label
+        db.commit()
+    _ingest_and_score(db, body.address, body.limit)
+    db.refresh(w)
+    return w
+
+
+@router.post("/{address}/reanalyze", response_model=WalletDetail)
+def reanalyze_wallet(address: str, limit: int = Query(100, le=1000), db: Session = Depends(get_db)):
+    w = db.query(Wallet).filter(Wallet.address == address).first()
+    if not w:
+        raise HTTPException(404, "Cüzdan bulunamadı")
+    _ingest_and_score(db, address, limit)
+    db.refresh(w)
+    return w
 
 
 @router.get("/tracked", response_model=list[WalletOut])

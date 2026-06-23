@@ -1,5 +1,5 @@
 "use client";
-import { use } from "react";
+import { use, useState } from "react";
 import useSWR from "swr";
 import { fetcher, apiSend, shortAddr, fmtNum } from "@/lib/api";
 import { PageHeader, Confidence } from "@/components/Confidence";
@@ -12,6 +12,7 @@ export default function WalletDetail({ params }: { params: Promise<{ address: st
   const { data: w, error, isLoading, mutate } = useSWR<any>(`/wallets/${address}`, fetcher);
   const { data: history } = useSWR<any[]>(`/wallets/${address}/score-history`, fetcher);
   const { data: rels } = useSWR<any[]>(`/wallets/${address}/relationships`, fetcher);
+  const [reanalyzing, setReanalyzing] = useState(false);
 
   if (isLoading) return <Loading />;
   if (error) return <ErrorState message={(error as Error).message} />;
@@ -31,8 +32,16 @@ export default function WalletDetail({ params }: { params: Promise<{ address: st
     : [];
 
   async function reanalyze() {
-    // Yeniden analiz isteği (backend görevini tetikler); burada listeyi tazeler.
-    await mutate();
+    setReanalyzing(true);
+    try {
+      // Zincirden güncel işlemleri çekip yeniden puanlar.
+      await apiSend(`/wallets/${address}/reanalyze`, "POST");
+    } catch {
+      /* hata durumunda mevcut veriyi koru */
+    } finally {
+      await mutate();
+      setReanalyzing(false);
+    }
   }
 
   return (
@@ -42,7 +51,7 @@ export default function WalletDetail({ params }: { params: Promise<{ address: st
         subtitle={w.address}
         action={
           <div className="flex gap-2">
-            <button className="btn" onClick={reanalyze}>Yeniden Analiz</button>
+            <button className="btn" onClick={reanalyze} disabled={reanalyzing}>{reanalyzing ? "Analiz ediliyor…" : "Yeniden Analiz"}</button>
             <button className="btn" onClick={() => apiSend(`/wallets/${address}/approve`, "POST").then(() => mutate())}>Onayla</button>
             <button className="btn" onClick={() => apiSend(`/wallets/${address}/block`, "POST").then(() => mutate())}>Engelle</button>
           </div>

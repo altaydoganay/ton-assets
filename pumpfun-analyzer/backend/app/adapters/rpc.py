@@ -95,3 +95,10 @@ class SolanaRpcAdapter(ChainProvider):
 
     def get_latest_blockhash(self) -> dict[str, Any] | None:
         return self._rpc("getLatestBlockhash", [{"commitment": "finalized"}])
+
+    def get_token_largest_accounts(self, mint: str) -> list[dict[str, Any]]:
+        res = self._rpc("getTokenLargestAccounts", [mint])
+        try:
+            return res["value"] or []
+        except (TypeError, KeyError):
+            return []
