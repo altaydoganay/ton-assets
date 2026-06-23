@@ -15,6 +15,12 @@ def test_redact_base58_secret():
     assert "[GIZLI]" in out
 
 
+def test_redact_api_key():
+    out = redact("connecting to wss://pumpportal.fun/api/data?api-key=abc123secretkey")
+    assert "abc123secretkey" not in out
+    assert "[GIZLI]" in out
+
+
 def test_redact_keeps_normal_address():
     addr = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
     out = redact(f"wallet address {addr}")

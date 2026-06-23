@@ -148,16 +148,32 @@ class PumpPortalListener:
         finally:
             db.close()
 
+    def _ws_url(self) -> str:
+        """Veri akışı URL'i. subscribeTokenTrade/AccountTrade için API anahtarı şart
+        (PumpPortal kuralı: funded ≥0.02 SOL). Anahtar varsa URL'e eklenir."""
+        url = settings.pumpportal_data_ws
+        if settings.pumpportal_api_key:
+            sep = "&" if "?" in url else "?"
+            return f"{url}{sep}api-key={settings.pumpportal_api_key}"
+        logger.warning(
+            "PumpPortal API anahtarı yok: yalnızca yeni-token akışı çalışır. "
+            "Keşif (token trade) ve takip (account trade) için, cüzdanında ≥0.02 SOL "
+            "bulunan bir PUMPPORTAL_API_KEY gerekir."
+        )
+        return url
+
     async def run(self, stop_event: asyncio.Event | None = None):
         import websockets
 
+        ws_url = self._ws_url()
         backoff = 1.0
         while stop_event is None or not stop_event.is_set():
             self.subscribed_accounts.clear()
             self.watched_tokens.clear()
             try:
-                async with websockets.connect(settings.pumpportal_data_ws, ping_interval=20) as ws:
-                    logger.info("PumpPortal veri akışına bağlanıldı (keşif=%s)", settings.discovery_enabled)
+                async with websockets.connect(ws_url, ping_interval=20) as ws:
+                    logger.info("PumpPortal veri akışına bağlanıldı (keşif=%s, anahtar=%s)",
+                                settings.discovery_enabled, bool(settings.pumpportal_api_key))
                     backoff = 1.0
                     if settings.discovery_enabled:
                         await ws.send(json.dumps({"method": "subscribeNewToken"}))

@@ -14,7 +14,7 @@ _BASE58_SECRET = re.compile(r"\b[1-9A-HJ-NP-Za-km-z]{80,90}\b")
 _HEX_SECRET = re.compile(r"\b[0-9a-fA-F]{64,128}\b")
 # 12/24 kelimelik mnemonic ipucu
 _MNEMONIC = re.compile(r"\b(?:[a-z]{3,8}\s+){11,23}[a-z]{3,8}\b")
-_SENSITIVE_KEYS = ("private_key", "secret_key", "seed", "mnemonic", "passphrase", "keystore", "secret")
+_SENSITIVE_KEYS = ("private_key", "secret_key", "seed", "mnemonic", "passphrase", "keystore", "secret", "api-key", "api_key", "apikey")
 
 REDACTION = "[GIZLI]"
 
