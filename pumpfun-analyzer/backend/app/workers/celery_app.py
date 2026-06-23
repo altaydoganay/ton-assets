@@ -9,6 +9,9 @@ celery_app = Celery(
     "pumpfun",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
+    # Worker başlangıçta görev modülünü import etsin; aksi halde görevler
+    # "unregistered task" hatası verir.
+    include=["app.workers.tasks"],
 )
 
 celery_app.conf.update(
@@ -28,3 +31,7 @@ celery_app.conf.update(
         "reanalyze-tracked": {"task": "app.workers.tasks.reanalyze_tracked", "schedule": 900.0},
     },
 )
+
+# Görevleri kesin olarak kaydet (include lazy olabildiği için açıkça import et).
+# celery_app yukarıda tanımlandığı için bu import döngüsel sorun yaratmaz.
+from . import tasks  # noqa: E402,F401
