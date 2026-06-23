@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from celery import Celery
 
-from ..config import settings
+from ..config import settings  # noqa: F401  (beat_schedule içinde kullanılır)
 
 celery_app = Celery(
     "pumpfun",
@@ -19,7 +19,12 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     beat_schedule={
-        "discover-wallets": {"task": "app.workers.tasks.discover_candidates", "schedule": 300.0},
+        # Keşfedilen adayları parti parti analiz edip puanla (otomatik keşif)
+        "analyze-discovered": {
+            "task": "app.workers.tasks.analyze_discovered",
+            "schedule": float(settings.discovery_interval_seconds),
+        },
+        # Takip edilen cüzdanları periyodik yeniden analiz et (puan güncelliği)
         "reanalyze-tracked": {"task": "app.workers.tasks.reanalyze_tracked", "schedule": 900.0},
     },
 )

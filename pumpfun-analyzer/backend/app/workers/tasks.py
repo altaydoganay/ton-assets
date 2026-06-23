@@ -33,24 +33,34 @@ def ingest_and_analyze_wallet(address: str) -> dict:
         db.close()
 
 
-@celery_app.task(name="app.workers.tasks.discover_candidates")
-def discover_candidates() -> dict:
-    """Aday cüzdan keşfi (başarılı tokenlerin erken-fakat-ilk-blok-olmayan alıcıları).
+@celery_app.task(name="app.workers.tasks.analyze_discovered")
+def analyze_discovered() -> dict:
+    """Listener'ın keşfettiği aday cüzdanları parti parti analiz edip puanlar.
 
-    Gerçek keşif RPC/Helius üzerinden token alıcılarını tarar. Burada hattın
-    iskeleti vardır; ağ yoksa boş döner.
+    Aday toplama canlı dinleyicide (PumpPortal) yapılır; bu görev `discovered`
+    durumundaki cüzdanları Helius ile analiz eder ve uygunları `tracked` yapar.
     """
+    from ..config import settings
+    from ..services.discovery import analyze_discovered_batch
+
     db = SessionLocal()
     try:
-        # NOT: Gerçek keşif mantığı discovery modülünde; ağ gerektirir.
-        from ..core.discovery.wallet_discovery import discover_from_recent_tokens
         try:
             provider = build_chain_provider()
-            candidates = discover_from_recent_tokens(provider)
         except Exception as exc:  # noqa: BLE001
-            logger.info("Keşif atlandı (ağ yok?): %s", exc)
-            candidates = []
-        return {"candidates": len(candidates)}
+            logger.info("Zincir sağlayıcı kurulamadı: %s", exc)
+            return {"analyzed": 0, "error": "provider"}
+        try:
+            results = analyze_discovered_batch(
+                db, provider,
+                limit=settings.discovery_batch_size,
+                ingest_limit=settings.discovery_ingest_limit,
+            )
+        except RpcUnavailableError as exc:
+            logger.warning("Keşif analizi atlandı (RPC): %s", exc)
+            return {"analyzed": 0, "error": "rpc_unavailable"}
+        tracked = sum(1 for r in results if r.get("tracked"))
+        return {"analyzed": len(results), "tracked": tracked, "results": results}
     finally:
         db.close()
 

@@ -219,10 +219,14 @@ kapatılır. Transferler satış olarak yorumlanmaz; yalnızca gerçek swap'lar.
 
 Uçtan uca akış (PumpPortal canlı veri + Helius zincir verisi ile):
 
-1. **Cüzdan ekleyin.** Panelde *Keşfedilen Cüzdanlar* sayfasındaki **"Cüzdan Ekle
-   ve Analiz Et"** formuna bir adres girin (veya `POST /api/wallets`). Sistem son
-   işlemleri Helius/RPC'den çeker, FIFO PnL + sınıflandırma + puanlama yapar.
-   Puan ≥ 70 ve uygunsa cüzdan **takip listesine** alınır.
+1. **Otomatik keşif (varsayılan).** `listener` servisi PumpPortal canlı akışından
+   yeni Pump.fun tokenlerini ve bunların **alıcılarını** izler. Birden fazla farklı
+   token üzerinde alım yapan cüzdanlar *Keşfedilen Cüzdanlar* listesine `discovered`
+   olarak otomatik eklenir. Celery beat bunları parti parti (varsayılan 2 dakikada
+   bir, `DISCOVERY_BATCH_SIZE` adet) Helius ile analiz edip puanlar; puan ≥ 70 ve
+   tüm kalite/eleme kriterlerini geçenler otomatik **takip listesine** alınır.
+   İstersen *Keşfedilen Cüzdanlar* sayfasından **elle de** adres ekleyebilirsin
+   (`POST /api/wallets`). Otomatik keşif `DISCOVERY_ENABLED=false` ile kapatılır.
 2. **Dinleyici devreye girer.** `listener` servisi PumpPortal veri akışına
    (`wss://pumpportal.fun/api/data`) bağlanır ve takipteki cüzdanlara
    `subscribeAccountTrade` ile abone olur. Takip listesi otomatik tazelenir.

@@ -73,6 +73,20 @@ class Settings(BaseSettings):
     # Canlı olay akışı dinleyicisi açık mı (listener servisi)
     live_listener_enabled: bool = True
 
+    # --- Otomatik cüzdan keşfi ---
+    # Canlı akıştan (yeni token -> o tokenin alıcıları) aday cüzdan toplama.
+    discovery_enabled: bool = True
+    # Bir cüzdanın aday sayılması için kaç FARKLI token alımında görülmesi gerek
+    discovery_min_token_hits: int = 2
+    # Aynı anda izlenen (trade aboneliği açık) maksimum token sayısı
+    discovery_max_watched_tokens: int = 80
+    # Her arka plan döngüsünde analiz edilecek aday sayısı (Helius limitini koru)
+    discovery_batch_size: int = 5
+    # Aday analizinde taranacak işlem sayısı
+    discovery_ingest_limit: int = 80
+    # Aday analiz döngüsü aralığı (saniye) — Celery beat
+    discovery_interval_seconds: int = 120
+
     # --- Eşikler (varsayılan; veritabanındaki settings tablosu önceliklidir) ---
     min_wallet_score: float = 70.0
     min_token_score: float = 70.0
