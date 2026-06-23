@@ -77,7 +77,7 @@ class Settings(BaseSettings):
     min_wallet_score: float = 70.0
     min_token_score: float = 70.0
 
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "*"
 
     @property
     def cors_origin_list(self) -> list[str]:

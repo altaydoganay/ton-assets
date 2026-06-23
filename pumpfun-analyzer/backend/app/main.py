@@ -45,13 +45,28 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS: Bu yerel, kimlik-doğrulamasız bir araç olduğundan varsayılan olarak tüm
+# kaynaklara izin verilir ("*"); böylece panel hangi portta (3000/3001…) açılırsa
+# açılsın "Failed to fetch" yaşanmaz. "*" kullanılırken tarayıcı kuralı gereği
+# allow_credentials=False olmalıdır. Belirli kaynak listelemek isterseniz
+# CORS_ORIGINS'i virgüllü liste yapın (o zaman credentials açılır).
+_cors = settings.cors_origin_list
+if "*" in _cors or not _cors:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 prefix = settings.api_prefix
 for r in (
