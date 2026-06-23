@@ -25,6 +25,9 @@ services:
 
   backend:
     build: ./backend
+    # Tek bir backend imajı; worker/beat/listener AYNI imajı paylaşır.
+    # Böylece `backend` yeniden kurulunca hepsi güncel kodu alır (stale imaj olmaz).
+    image: pumpfun-analyzer-backend
     env_file: .env
     depends_on:
       db:
@@ -37,7 +40,7 @@ services:
       - keystore_data:/app/data
 
   worker:
-    build: ./backend
+    image: pumpfun-analyzer-backend
     command: celery -A app.workers.celery_app.celery_app worker --loglevel=info
     env_file: .env
     depends_on:
@@ -47,17 +50,17 @@ services:
       - keystore_data:/app/data
 
   beat:
-    build: ./backend
+    image: pumpfun-analyzer-backend
     command: celery -A app.workers.celery_app.celery_app beat --loglevel=info
     env_file: .env
     depends_on:
       - redis
       - backend
 
-  # Canlı olay akışı dinleyicisi: PumpPortal'dan takipteki cüzdan işlemlerini
-  # alır, bildirim gönderir ve (ayar açıksa) kopya işlem yapar.
+  # Canlı olay akışı dinleyicisi: PumpPortal'dan yeni token alıcılarını keşfeder
+  # ve takipteki cüzdan işlemlerinde bildirim + (ayar açıksa) kopya işlem yapar.
   listener:
-    build: ./backend
+    image: pumpfun-analyzer-backend
     command: python -m app.workers.pumpportal_listener
     env_file: .env
     depends_on:
