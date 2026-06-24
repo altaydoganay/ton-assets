@@ -1,0 +1,6 @@
+# Demo (paper) mode needs only this:
+PyYAML>=6.0
+
+# Live (real-money) mode additionally needs the official Polymarket SDK.
+# It is commented out so demo installs stay light. Uncomment for live:
+# py-clob-client>=0.34.0

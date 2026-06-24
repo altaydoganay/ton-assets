@@ -1,0 +1,9 @@
+.env
+state.json
+state.json.tmp
+logs/
+.venv/
+__pycache__/
+*.pyc
+STOP
+config.yaml

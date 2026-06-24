@@ -1,0 +1,29 @@
+# Copy to config.yaml and edit. Secrets (PRIVATE_KEY) go in .env, NEVER here.
+
+mode: demo            # "demo" = paper (no money) | "live" = real money on Polymarket
+asset: btc            # trades the btc-updown-5m series
+
+# --- strategy ---
+threshold: 0.70             # enter the favorite when its ask >= this
+max_entry_price: 0.90       # ...but never pay more than this (entry discipline)
+stop_loss_pct: 0.25         # exit if the mark falls this fraction below entry
+exit_before_sec: 20         # always flatten this many seconds before close
+entry_window_max_sec: 150   # only consider entering inside this window
+min_entry_seconds_left: 60
+
+# --- sizing / risk ---
+stake_usd: 5.0              # nominal stake per trade
+max_notional_usd: 8.0      # hard cap per position
+daily_max_loss_usd: 25.0   # halt trading for the day past this loss
+max_trades_per_day: 12
+slippage_bps: 10.0         # modeled adverse fill
+
+# --- demo ---
+demo_starting_balance_usd: 1000.0
+
+# --- loop ---
+poll_sec: 3
+
+# --- live endpoints (no secrets) ---
+clob_host: https://clob.polymarket.com
+chain_id: 137
