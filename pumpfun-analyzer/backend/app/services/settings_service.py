@@ -75,3 +75,42 @@ def seed_defaults(db: Session) -> None:
 
 def all_settings(db: Session) -> dict[str, dict]:
     return {key: get_setting(db, key) for key in DEFAULTS}
+
+
+# Hazır risk profilleri — panelden tek tıkla uygulanır.
+RISK_PROFILES: dict[str, dict] = {
+    "temkinli": {
+        "fixed_sol_amount": 0.02, "max_position_sol": 0.05, "max_daily_spend_sol": 0.3,
+        "max_daily_loss_sol": 0.1, "max_slippage": 0.08, "min_wallet_score": 80,
+        "min_token_score": 80, "min_liquidity_sol": 15, "max_open_positions_per_token": 1,
+    },
+    "dengeli": {
+        "fixed_sol_amount": 0.05, "max_position_sol": 0.2, "max_daily_spend_sol": 1.0,
+        "max_daily_loss_sol": 0.5, "max_slippage": 0.15, "min_wallet_score": 70,
+        "min_token_score": 70, "min_liquidity_sol": 5, "max_open_positions_per_token": 1,
+    },
+    "agresif": {
+        "fixed_sol_amount": 0.1, "max_position_sol": 0.5, "max_daily_spend_sol": 3.0,
+        "max_daily_loss_sol": 1.5, "max_slippage": 0.25, "min_wallet_score": 65,
+        "min_token_score": 65, "min_liquidity_sol": 3, "max_open_positions_per_token": 2,
+    },
+}
+
+
+def apply_risk_profile(db: Session, name: str) -> dict:
+    preset = RISK_PROFILES.get(name)
+    if preset is None:
+        raise KeyError(name)
+    risk = get_setting(db, "risk")
+    risk.update(preset)
+    return set_setting(db, "risk", risk)
+
+
+def set_heartbeat(db: Session, key: str = "listener_heartbeat") -> None:
+    from datetime import datetime, timezone
+    set_setting(db, "_meta_" + key, {"ts": datetime.now(timezone.utc).isoformat()})
+
+
+def get_heartbeat(db: Session, key: str = "listener_heartbeat") -> str | None:
+    row = db.query(Setting).filter(Setting.key == "_meta_" + key).first()
+    return (row.value or {}).get("ts") if row else None

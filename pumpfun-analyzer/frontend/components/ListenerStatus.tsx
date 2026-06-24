@@ -1,0 +1,21 @@
+"use client";
+import useSWR from "swr";
+import { fetcher } from "@/lib/api";
+
+export function ListenerStatus() {
+  const { data } = useSWR<any>("/setup", fetcher, { refreshInterval: 20000 });
+  if (!data) return null;
+  const listener = data.checks?.find((c: any) => c.key === "listener");
+  const ok = listener?.ok;
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span className="relative flex h-2.5 w-2.5">
+        {ok && <span className="absolute inline-flex h-full w-full animate-ping rounded-full" style={{ background: "#10b981", opacity: 0.6 }} />}
+        <span className="relative inline-flex h-2.5 w-2.5 rounded-full" style={{ background: ok ? "#10b981" : "#ef4444" }} />
+      </span>
+      <span className="muted">Dinleyici: {ok ? "bağlı" : "kapalı"}</span>
+      <span className="muted">·</span>
+      <span className="muted">Mod: {data.trading_mode === "live" ? "Canlı" : data.trading_mode === "paper" ? "Paper" : data.trading_mode}</span>
+    </div>
+  );
+}

@@ -4,8 +4,11 @@ import useSWR from "swr";
 import { fetcher, apiSend, shortAddr, fmtNum } from "@/lib/api";
 import { PageHeader, Confidence } from "@/components/Confidence";
 import { ScoreBadge, StatusBadge, RiskFlags } from "@/components/ScoreBadge";
-import { ScoreChart, SubScoreBars } from "@/components/ScoreChart";
+import { ScoreChart, SubScoreBars, SubScoreRadar } from "@/components/ScoreChart";
 import { Loading, ErrorState } from "@/components/States";
+import { CopyButton } from "@/components/ui";
+import { solscanToken, pumpfunToken } from "@/lib/links";
+import { ExternalLink } from "lucide-react";
 
 export default function TokenDetail({ params }: { params: Promise<{ mint: string }> }) {
   const { mint } = use(params);
@@ -35,12 +38,16 @@ export default function TokenDetail({ params }: { params: Promise<{ mint: string
         title={t.symbol || t.name || shortAddr(t.mint)}
         subtitle={t.mint}
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <a className="btn" href={pumpfunToken(t.mint)} target="_blank" rel="noreferrer"><ExternalLink size={15} /> pump.fun</a>
+            <a className="btn" href={solscanToken(t.mint)} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Solscan</a>
             <button className="btn" onClick={() => mutate()}>Yeniden Analiz</button>
-            <button className="btn" onClick={() => apiSend(`/tokens/${mint}/block`, "POST").then(() => mutate())}>Engelle</button>
+            <button className="btn-danger" onClick={() => apiSend(`/tokens/${mint}/block`, "POST").then(() => mutate())}>Engelle</button>
           </div>
         }
       />
+
+      <div className="mb-3"><CopyButton text={t.mint} label="Contract adresini kopyala" /></div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="card">
@@ -51,6 +58,7 @@ export default function TokenDetail({ params }: { params: Promise<{ mint: string
           <div className="mt-3"><StatusBadge status={t.status} /></div>
           <div className="mt-3"><Confidence value={t.confidence} /></div>
           <div className="mt-3"><RiskFlags flags={t.risk_flags} /></div>
+          {subScores.length > 0 && <div className="mt-2"><SubScoreRadar data={subScores} /></div>}
         </div>
         <div className="card lg:col-span-2">
           <h2 className="mb-3 font-semibold">Puan Kırılımı (yaşa/aşamaya uyarlanmış)</h2>

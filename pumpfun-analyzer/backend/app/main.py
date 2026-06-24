@@ -19,6 +19,7 @@ from .api.routes_misc import (
     settings_router,
     trading_router,
 )
+from .api.routes_stats import export_router, setup_router, stats_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 install_redaction()  # tüm loglarda gizli bilgi maskeleme
@@ -77,6 +78,9 @@ for r in (
     trading_router,
     settings_router,
     logs_router,
+    stats_router,
+    setup_router,
+    export_router,
     health_router,
 ):
     app.include_router(r, prefix=prefix)

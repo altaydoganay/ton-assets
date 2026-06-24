@@ -1,5 +1,22 @@
 "use client";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import {
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+  RadarChart, PolarGrid, PolarAngleAxis, Radar,
+} from "recharts";
+
+export function SubScoreRadar({ data }: { data: { label: string; value: number }[] }) {
+  const series = data.map((d) => ({ subject: d.label, A: d.value }));
+  return (
+    <ResponsiveContainer width="100%" height={260}>
+      <RadarChart data={series} outerRadius="72%">
+        <PolarGrid stroke="var(--border)" />
+        <PolarAngleAxis dataKey="subject" tick={{ fill: "var(--muted)", fontSize: 10 }} />
+        <Radar dataKey="A" stroke="#2dd4bf" fill="#2dd4bf" fillOpacity={0.35} />
+        <Tooltip contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 12 }} />
+      </RadarChart>
+    </ResponsiveContainer>
+  );
+}
 
 export function ScoreChart({ data }: { data: { created_at: string; total: number }[] }) {
   const series = data.map((d) => ({

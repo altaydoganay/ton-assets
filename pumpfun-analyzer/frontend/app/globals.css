@@ -3,53 +3,90 @@
 @tailwind utilities;
 
 :root {
-  --bg: #f8fafc;
+  --bg: #f6f8fb;
+  --bg2: #eef2f7;
   --card: #ffffff;
-  --border: #e2e8f0;
+  --border: #e3e8ef;
   --text: #0f172a;
   --muted: #64748b;
+  --brand: #14b8a6;
+  --brand2: #0ea5a4;
 }
 .dark {
-  --bg: #0b1120;
-  --card: #111827;
-  --border: #1f2937;
-  --text: #e5e7eb;
-  --muted: #94a3b8;
+  --bg: #0a0e17;
+  --bg2: #0f1623;
+  --card: #121a28;
+  --border: #1e2937;
+  --text: #e6edf5;
+  --muted: #8a99ad;
+  --brand: #2dd4bf;
+  --brand2: #14b8a6;
 }
 
+* { border-color: var(--border); }
 body {
-  background: var(--bg);
+  background:
+    radial-gradient(900px 500px at 100% -10%, rgba(45,212,191,0.07), transparent 60%),
+    var(--bg);
   color: var(--text);
 }
 
 @layer components {
   .card {
-    @apply rounded-xl border p-4 shadow-sm;
+    @apply rounded-2xl border p-4 shadow-sm;
     background: var(--card);
     border-color: var(--border);
   }
+  .card-hover { transition: transform .15s ease, border-color .15s ease; }
+  .card-hover:hover { transform: translateY(-2px); border-color: var(--brand); }
   .muted { color: var(--muted); }
+  .brand { color: var(--brand); }
+
   .btn {
-    @apply rounded-lg px-3 py-2 text-sm font-medium transition;
-    background: var(--card);
-    border: 1px solid var(--border);
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition;
+    background: var(--bg2); border: 1px solid var(--border); color: var(--text);
   }
-  .btn:hover { border-color: #14b8a6; }
+  .btn:hover { border-color: var(--brand); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
   .btn-primary {
-    @apply rounded-lg px-3 py-2 text-sm font-semibold text-white transition;
-    background: #14b8a6;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-white transition;
+    background: linear-gradient(180deg, var(--brand), var(--brand2));
   }
-  .btn-primary:hover { background: #0f766e; }
+  .btn-primary:hover { filter: brightness(1.07); }
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-white transition;
+    background: linear-gradient(180deg, #ef4444, #dc2626);
+  }
+  .btn-ghost { @apply inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition; color: var(--muted); }
+  .btn-ghost:hover { color: var(--brand); }
+
   .nav-link {
-    @apply flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition;
+    @apply flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition;
+    color: var(--muted);
   }
-  .nav-link:hover { background: rgba(20,184,166,0.1); }
-  .nav-link.active { background: rgba(20,184,166,0.15); color: #14b8a6; font-weight: 600; }
+  .nav-link:hover { background: rgba(45,212,191,0.08); color: var(--text); }
+  .nav-link.active { background: rgba(45,212,191,0.14); color: var(--brand); font-weight: 600; }
+
   .input {
-    @apply w-full rounded-lg px-3 py-2 text-sm;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    color: var(--text);
+    @apply w-full rounded-xl px-3 py-2 text-sm outline-none transition;
+    background: var(--bg2); border: 1px solid var(--border); color: var(--text);
   }
-  .badge { @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium; }
+  .input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(45,212,191,0.12); }
+
+  .badge { @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium; }
+  .chip {
+    @apply cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition;
+    background: var(--bg2); border-color: var(--border); color: var(--muted);
+  }
+  .chip:hover { border-color: var(--brand); }
+  .chip.active { background: rgba(45,212,191,0.15); border-color: var(--brand); color: var(--brand); }
+
+  .skeleton { @apply animate-pulse rounded-lg; background: var(--bg2); }
+  .meter { @apply h-2 w-full overflow-hidden rounded-full; background: var(--bg2); }
+  .table-row { transition: background .12s ease; }
+  .table-row:hover { background: var(--bg2); }
+  th { color: var(--muted); font-weight: 500; }
 }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }

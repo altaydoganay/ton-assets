@@ -29,6 +29,7 @@ from ..adapters.pumpportal import PumpPortalTrade, PumpPortalTrader
 from ..adapters.registry import build_chain_provider
 from ..core.analysis.swap_detection import (
     PUMP_FUN_PROGRAM,
+    PUMP_SWAP_PROGRAM,
     detect_swap,
     extract_buyers,
 )
@@ -101,12 +102,25 @@ class HeliusListener:
             "params": [{"mentions": [mentions]}, {"commitment": "confirmed"}],
         }))
 
+    def _heartbeat(self):
+        db = SessionLocal()
+        try:
+            from ..services.settings_service import set_heartbeat
+            set_heartbeat(db)
+        except Exception:  # noqa: BLE001
+            pass
+        finally:
+            db.close()
+
     async def _refresh(self, ws):
         while True:
             try:
+                await asyncio.to_thread(self._heartbeat)
                 if settings.discovery_enabled and not self.discovery_sub_active:
                     await self._subscribe_logs(ws, PUMP_FUN_PROGRAM, "discovery", None)
                     self.discovery_sub_active = True
+                    # Mezun olmuş (PumpSwap) token alıcıları da kaliteli sinyaldir
+                    await self._subscribe_logs(ws, PUMP_SWAP_PROGRAM, "discovery", None)
                 current = set(_tracked_addresses())
                 for addr in current - self.subscribed_accounts:
                     await self._subscribe_logs(ws, addr, "tracked", addr)
