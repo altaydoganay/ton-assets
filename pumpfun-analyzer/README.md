@@ -219,10 +219,13 @@ kapatılır. Transferler satış olarak yorumlanmaz; yalnızca gerçek swap'lar.
 
 Uçtan uca akış (PumpPortal canlı veri + Helius zincir verisi ile):
 
-1. **Otomatik keşif (varsayılan).** `listener` servisi PumpPortal canlı akışından
-   yeni Pump.fun tokenlerini ve bunların **alıcılarını** izler. Birden fazla farklı
-   token üzerinde alım yapan cüzdanlar *Keşfedilen Cüzdanlar* listesine `discovered`
-   olarak otomatik eklenir. Celery beat bunları parti parti (varsayılan 2 dakikada
+1. **Otomatik keşif (varsayılan, Helius ile — ücretsiz).** `listener` servisi
+   Helius WebSocket'inden (`logsSubscribe`, planına dahil, SOL ÜCRETİ YOK) pump.fun
+   işlemlerini dinler, alıcıları çıkarır; birden fazla farklı token alan cüzdanlar
+   *Keşfedilen Cüzdanlar* listesine `discovered` olarak otomatik eklenir. Ücretsiz
+   Helius kotasını korumak için keşif sorguları `DISCOVERY_MAX_LOOKUPS_PER_MIN` ile
+   sınırlıdır. (Eski PumpPortal akışı her olay için SOL ücreti kestiğinden artık
+   yalnızca canlı al-sat için kullanılır; `LISTENER_PROVIDER=helius` varsayılandır.) Celery beat bunları parti parti (varsayılan 2 dakikada
    bir, `DISCOVERY_BATCH_SIZE` adet) Helius ile analiz edip puanlar; puan ≥ 70 ve
    tüm kalite/eleme kriterlerini geçenler otomatik **takip listesine** alınır.
    İstersen *Keşfedilen Cüzdanlar* sayfasından **elle de** adres ekleyebilirsin

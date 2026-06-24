@@ -61,7 +61,8 @@ services:
   # ve takipteki cüzdan işlemlerinde bildirim + (ayar açıksa) kopya işlem yapar.
   listener:
     image: pumpfun-analyzer-backend
-    command: python -m app.workers.pumpportal_listener
+    # LISTENER_PROVIDER'a göre Helius (ücretsiz) veya PumpPortal dinleyicisi.
+    command: python -m app.workers.run_listener
     env_file: .env
     depends_on:
       - backend

@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     solana_ws_url: str = "wss://api.mainnet-beta.solana.com"
     helius_api_key: str = ""
     helius_rpc_url: str = ""
+    helius_ws_url: str = ""  # boşsa api-key'den üretilir
+    # Canlı dinleyici sağlayıcısı: "helius" (ücretsiz, SOL yakmaz) | "pumpportal"
+    listener_provider: str = "helius"
     # RPC hız limiti koruması: istekler arası asgari süre (sn) ve 429 tekrar sayısı.
     # Helius ücretsiz katman ~10 istek/sn; 0.12 ≈ 8 istek/sn güvenli.
     # NOT: Bu throttle yalnızca arka plan KEŞİF analizinde uygulanır; canlı alım
@@ -95,6 +98,9 @@ class Settings(BaseSettings):
     discovery_ingest_limit: int = 40
     # Aday analiz döngüsü aralığı (saniye) — Celery beat
     discovery_interval_seconds: int = 120
+    # Helius keşfinde dakikada en fazla kaç işlem detayı çekilsin (ücretsiz plan
+    # kredisini koru). Kota dolarsa bu değeri artır (planı yükselttikten sonra).
+    discovery_max_lookups_per_min: int = 30
 
     # --- Eşikler (varsayılan; veritabanındaki settings tablosu önceliklidir) ---
     min_wallet_score: float = 70.0

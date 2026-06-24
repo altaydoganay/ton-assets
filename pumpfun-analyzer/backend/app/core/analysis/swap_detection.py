@@ -143,3 +143,22 @@ def is_transfer(tx: NormalizedTx, wallet: str) -> bool:
     return detect_swap(tx, wallet) is None and any(
         owner == wallet for (owner, _mint) in tx.token_deltas
     )
+
+
+def extract_buyers(tx: NormalizedTx, dust_sol: float = 0.0005) -> list[tuple[str, str]]:
+    """İşlemdeki ALICILARI (cüzdan, mint) döner — keşif için.
+
+    Cüzdan SOL kaybedip (negatif) bir SPL token (WSOL hariç) kazandıysa o tokeni
+    satın almıştır. Bilinen bir swap venue içermeyen işlemler (transfer/airdrop)
+    elenir.
+    """
+    if _is_swap_venue(tx.programs) is None:
+        return []
+    buyers: list[tuple[str, str]] = []
+    for (owner, mint), amt in tx.token_deltas.items():
+        if mint == WSOL_MINT or amt <= 0:
+            continue
+        sol = tx.sol_deltas.get(owner, 0.0)
+        if sol < -dust_sol:  # SOL harcadı + token aldı => alıcı
+            buyers.append((owner, mint))
+    return buyers
