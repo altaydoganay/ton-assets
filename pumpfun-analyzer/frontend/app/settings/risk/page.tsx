@@ -26,6 +26,8 @@ const FIELDS: { key: string; label: string; type: "number" | "bool" | "text"; hi
   { key: "max_open_positions_per_token", label: "Token Başına Maks. Pozisyon", type: "number" },
   { key: "max_follow_lag_seconds", label: "Maks. İzleme Gecikmesi (sn)", type: "number" },
   { key: "min_liquidity_sol", label: "Min. Likidite (SOL)", type: "number" },
+  { key: "take_profit_pct", label: "Take-Profit (oran)", type: "number", hint: "0 = kapalı. 0.5 = +%50'de otomatik sat (paper)" },
+  { key: "stop_loss_pct", label: "Stop-Loss (oran)", type: "number", hint: "0 = kapalı. 0.3 = -%30'da otomatik sat (paper)" },
 ];
 
 const PROFILES = [

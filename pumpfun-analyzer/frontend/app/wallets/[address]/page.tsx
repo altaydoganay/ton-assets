@@ -8,6 +8,7 @@ import { PageHeader, Confidence } from "@/components/Confidence";
 import { ScoreBadge, StatusBadge, RiskFlags } from "@/components/ScoreBadge";
 import { ScoreChart, SubScoreBars, SubScoreRadar } from "@/components/ScoreChart";
 import { EligibilityChecklist } from "@/components/Eligibility";
+import { RelationshipGraph } from "@/components/RelationshipGraph";
 import { CopyButton, Section } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import { Loading, ErrorState } from "@/components/States";
@@ -117,17 +118,8 @@ export default function WalletDetail({ params }: { params: Promise<{ address: st
       )}
 
       <div className="mt-4">
-        <Section title="Bağlantılı Cüzdanlar">
-          {rels && rels.length > 0 ? (
-            <ul className="space-y-1 text-sm">
-              {rels.map((r, i) => (
-                <li key={i} className="flex justify-between">
-                  <span>{shortAddr(r.source)} → {shortAddr(r.target)} <span className="muted">({r.kind})</span></span>
-                  <span className="muted">Güven: %{Math.round(r.confidence * 100)}</span>
-                </li>
-              ))}
-            </ul>
-          ) : <p className="muted text-sm">Bağlantılı cüzdan tespit edilmedi.</p>}
+        <Section title="Bağlantılı Cüzdanlar (sybil / insider / copy kümeleri)">
+          <RelationshipGraph center={w.address} rels={rels || []} />
         </Section>
       </div>
     </div>

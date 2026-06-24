@@ -65,6 +65,23 @@ def analyze_discovered() -> dict:
         db.close()
 
 
+@celery_app.task(name="app.workers.tasks.manage_positions")
+def manage_positions() -> dict:
+    """Açık paper pozisyonlarında TP/SL kontrolü."""
+    from ..adapters.registry import build_market_provider
+    from ..services.position_manager import manage_positions as _manage
+
+    db = SessionLocal()
+    try:
+        closed = _manage(db, build_market_provider())
+        return {"closed": len(closed), "details": closed}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("TP/SL kontrolü hatası: %s", exc)
+        return {"closed": 0, "error": str(exc)[:120]}
+    finally:
+        db.close()
+
+
 @celery_app.task(name="app.workers.tasks.reanalyze_tracked")
 def reanalyze_tracked() -> dict:
     db = SessionLocal()

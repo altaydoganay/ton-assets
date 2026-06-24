@@ -105,3 +105,20 @@ def evaluate_buy(
     if reasons:
         return RiskDecision(False, reasons, amount)
     return RiskDecision(True, ["Tüm risk kontrolleri geçildi"], amount)
+
+
+def tp_sl_should_close(cost_sol: float, qty: float, price_sol: float,
+                       take_profit_pct: float, stop_loss_pct: float) -> str | None:
+    """Açık pozisyon için take-profit / stop-loss kararı.
+
+    take_profit_pct / stop_loss_pct: 0-1 arası oran (0 = kapalı). Dönüş: "tp" | "sl" | None.
+    """
+    if qty <= 0 or cost_sol <= 0 or price_sol <= 0:
+        return None
+    value = qty * price_sol
+    pnl_pct = (value - cost_sol) / cost_sol
+    if take_profit_pct > 0 and pnl_pct >= take_profit_pct:
+        return "tp"
+    if stop_loss_pct > 0 and pnl_pct <= -stop_loss_pct:
+        return "sl"
+    return None

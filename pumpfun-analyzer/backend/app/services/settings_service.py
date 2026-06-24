@@ -38,6 +38,8 @@ DEFAULTS: dict[str, dict] = {
         "blocked_tokens": [],
         "only_wallets": [],
         "close_mode": "proportional",
+        "take_profit_pct": 0.0,   # 0 = kapalı; örn. 0.5 = +%50'de sat
+        "stop_loss_pct": 0.0,     # 0 = kapalı; örn. 0.3 = -%30'da sat
     },
 }
 

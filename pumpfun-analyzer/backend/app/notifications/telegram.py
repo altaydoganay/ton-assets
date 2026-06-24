@@ -93,6 +93,10 @@ class TelegramNotifier:
             if self._client is None:
                 client.close()
 
+    def send_text(self, text: str) -> bool:
+        """Hazır bir metni gönderir (yeniden gönderim için)."""
+        return self._post(text)
+
     def notify(self, db: Session, content: AlertContent) -> Alert | None:
         """Dedup uygula ve gönder. Daha önce gönderildiyse None döner."""
         key = make_dedup_key(content.signature, content.wallet_address, content.token_mint)

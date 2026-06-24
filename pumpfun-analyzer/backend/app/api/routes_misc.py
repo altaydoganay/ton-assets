@@ -46,6 +46,26 @@ def list_alerts(limit: int = Query(100, le=500), db: Session = Depends(get_db)):
     return db.query(Alert).order_by(Alert.created_at.desc()).limit(limit).all()
 
 
+@alerts_router.post("/{alert_id}/resend")
+def resend_alert(alert_id: int, db: Session = Depends(get_db)):
+    """Gönderilememiş bir bildirimi yeniden gönder."""
+    from datetime import datetime, timezone
+    from ..notifications.telegram import TelegramNotifier
+
+    alert = db.query(Alert).filter(Alert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(404, "Bildirim bulunamadı")
+    text = (alert.payload or {}).get("message", "")
+    if not text:
+        raise HTTPException(400, "Bildirim metni yok")
+    sent = TelegramNotifier().send_text(text)
+    alert.sent = sent
+    if sent:
+        alert.sent_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"id": alert_id, "sent": sent}
+
+
 # --- Paper trades ---
 @trading_router.get("/paper", response_model=list[PaperTradeOut])
 def paper_trades(limit: int = Query(200, le=1000), db: Session = Depends(get_db)):
@@ -115,10 +135,13 @@ def update_setting(key: str, body: SettingIn, db: Session = Depends(get_db)):
 
 # --- Loglar ---
 @logs_router.get("")
-def list_logs(level: str | None = None, limit: int = Query(200, le=1000), db: Session = Depends(get_db)):
+def list_logs(level: str | None = None, category: str | None = None,
+              limit: int = Query(200, le=1000), db: Session = Depends(get_db)):
     q = db.query(AuditLog)
     if level:
         q = q.filter(AuditLog.level == level)
+    if category:
+        q = q.filter(AuditLog.category == category)
     rows = q.order_by(AuditLog.created_at.desc()).limit(limit).all()
     return [
         {"id": r.id, "level": r.level, "category": r.category, "message": r.message,

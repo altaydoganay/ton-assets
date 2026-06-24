@@ -1,13 +1,42 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Token, TokenScore, TokenStatus, TokenHolder
 from ..schemas import TokenDetail, TokenOut, TokenScoreOut
+from ..adapters.registry import build_chain_provider, build_market_provider
+from ..services.token_analysis import analyze_token
 
 router = APIRouter(prefix="/tokens", tags=["tokens"])
+
+
+class TokenCreate(BaseModel):
+    mint: str
+
+
+@router.post("", response_model=TokenDetail, status_code=201)
+def add_token(body: TokenCreate, db: Session = Depends(get_db)):
+    """Bir tokeni elle ekleyip anlık analiz et (bağımsız izleme listesi)."""
+    chain = build_chain_provider(throttle=False)
+    market = build_market_provider()
+    token, _ = analyze_token(db, body.mint.strip(), chain, market)
+    db.refresh(token)
+    return token
+
+
+@router.post("/{mint}/reanalyze", response_model=TokenDetail)
+def reanalyze_token(mint: str, db: Session = Depends(get_db)):
+    t = db.query(Token).filter(Token.mint == mint).first()
+    if not t:
+        raise HTTPException(404, "Token bulunamadı")
+    chain = build_chain_provider(throttle=False)
+    market = build_market_provider()
+    analyze_token(db, mint, chain, market)
+    db.refresh(t)
+    return t
 
 
 @router.get("", response_model=list[TokenOut])
