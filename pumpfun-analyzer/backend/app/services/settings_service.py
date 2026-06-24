@@ -73,6 +73,13 @@ def seed_defaults(db: Session) -> None:
         if not db.query(Setting).filter(Setting.key == key).first():
             db.add(Setting(key=key, value=value))
     db.commit()
+    # wallet_eligibility panelden düzenlenemez; ilk kurulumda DB'ye yazılan eski
+    # değerler kod güncellemelerini gölgeliyordu. Her açılışta kod değerine
+    # senkronla ki güncel (pump.fun'a uyarlı) kriterler uygulansın.
+    elig = db.query(Setting).filter(Setting.key == "wallet_eligibility").first()
+    if elig and elig.value != DEFAULTS["wallet_eligibility"]:
+        elig.value = DEFAULTS["wallet_eligibility"]
+        db.commit()
 
 
 def all_settings(db: Session) -> dict[str, dict]:

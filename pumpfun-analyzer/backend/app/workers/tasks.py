@@ -60,6 +60,14 @@ def analyze_discovered() -> dict:
             logger.warning("Keşif analizi atlandı (RPC): %s", exc)
             return {"analyzed": 0, "error": "rpc_unavailable"}
         tracked = sum(1 for r in results if r.get("tracked"))
+        # Tanı: en sık eleme nedenlerini ASCII etiketle logla (Windows findstr uyumlu)
+        from collections import Counter
+        fc: Counter = Counter()
+        for r in results:
+            for f in r.get("failures", []):
+                fc[f] += 1
+        logger.info("[ANALYZE] batch=%d tracked=%d top_fails=%s",
+                    len(results), tracked, dict(fc.most_common(5)))
         return {"analyzed": len(results), "tracked": tracked, "results": results}
     finally:
         db.close()

@@ -65,7 +65,10 @@ def analyze_discovered_batch(
         try:
             ingest_wallet(db, chain, w.address, limit=ingest_limit)
             res = analyze_wallet(db, w.address)
-            results.append({"address": w.address, "score": res.total, "tracked": res.tracked})
+            results.append({
+                "address": w.address, "score": res.total, "tracked": res.tracked,
+                "failures": list(res.eligibility_failures), "vetoed": res.vetoed,
+            })
         except RpcUnavailableError as exc:
             logger.warning("Aday analiz edilemedi (RPC): %s", exc)
             # transient; last_analyzed'i değiştirme ki tekrar denensin

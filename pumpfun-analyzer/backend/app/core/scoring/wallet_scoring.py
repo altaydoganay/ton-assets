@@ -39,7 +39,7 @@ DEFAULT_WEIGHTS = {
 DEFAULT_ELIGIBILITY = {
     "min_closed_positions": 10,
     "min_distinct_tokens": 5,
-    "min_history_days": 5,
+    "min_history_days": 2,
     "min_win_rate": 0.55,
     "min_median_hold_seconds": 300,    # 5 dk
     "max_short_hold_ratio": 0.65,      # <10 dk kapanışlar
