@@ -88,8 +88,10 @@ class Settings(BaseSettings):
     # --- Otomatik cüzdan keşfi ---
     # Canlı akıştan (yeni token -> o tokenin alıcıları) aday cüzdan toplama.
     discovery_enabled: bool = True
-    # Bir cüzdanın aday sayılması için kaç FARKLI token alımında görülmesi gerek
-    discovery_min_token_hits: int = 2
+    # Bir cüzdanın aday sayılması için kaç FARKLI token alımında görülmesi gerek.
+    # Helius ücretsiz planında örnekleme seyrek olduğundan varsayılan 1; aynı
+    # cüzdanı iki kez yakalamak zor olur. Kaliteyi puanlama+eleme belirler.
+    discovery_min_token_hits: int = 1
     # Aynı anda izlenen (trade aboneliği açık) maksimum token sayısı
     discovery_max_watched_tokens: int = 80
     # Her arka plan döngüsünde analiz edilecek aday sayısı (Helius limitini koru)
