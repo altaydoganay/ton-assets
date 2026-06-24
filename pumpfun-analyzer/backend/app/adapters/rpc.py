@@ -119,9 +119,12 @@ class SolanaRpcAdapter(ChainProvider):
         return self._rpc("getSignaturesForAddress", [address, {"limit": limit}]) or []
 
     def get_transaction(self, signature: str) -> dict[str, Any] | None:
+        # commitment="confirmed": logsSubscribe "confirmed"de tetiklenir; finalized
+        # beklenirse işlem henüz bulunamayıp None döner ve keşif boşa çıkar.
         return self._rpc(
             "getTransaction",
-            [signature, {"maxSupportedTransactionVersion": 0, "encoding": "jsonParsed"}],
+            [signature, {"maxSupportedTransactionVersion": 0, "encoding": "jsonParsed",
+                         "commitment": "confirmed"}],
         )
 
     def get_token_supply(self, mint: str) -> dict[str, Any] | None:
