@@ -159,6 +159,7 @@ class Params:
     entry_window_max_sec: int = 150     # only enter when seconds_left <= this
     fee_bps: float = 0.0                # per side, on notional (Polymarket: 0 today)
     slippage_bps: float = 10.0          # extra adverse fill on exit
+    max_entry_price: float = 1.0        # skip entries priced above this (discipline)
 
 
 @dataclass
@@ -179,9 +180,9 @@ def run_strategy(m: Market, p: Params) -> Trade | None:
             if not (p.min_entry_seconds_left <= q.seconds_left <= p.entry_window_max_sec):
                 continue
             cands = []
-            if q.up_ask >= p.threshold:
+            if p.threshold <= q.up_ask <= p.max_entry_price:
                 cands.append(("UP", q.up_ask))
-            if q.dn_ask >= p.threshold:
+            if p.threshold <= q.dn_ask <= p.max_entry_price:
                 cands.append(("DOWN", q.dn_ask))
             if cands:
                 cands.sort(key=lambda x: x[1], reverse=True)
@@ -274,6 +275,8 @@ def build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--exit-before-sec", type=int, default=20)
     ap.add_argument("--min-entry-seconds-left", type=int, default=60)
     ap.add_argument("--entry-window-max-sec", type=int, default=150)
+    ap.add_argument("--max-entry-price", type=float, default=1.0,
+                    help="skip entries priced above this (entry discipline)")
     ap.add_argument("--stake-usd", type=float, default=5.0)
     # cost model
     ap.add_argument("--fee-bps", type=float, default=0.0)
@@ -311,6 +314,7 @@ def main():
         entry_window_max_sec=args.entry_window_max_sec,
         fee_bps=args.fee_bps,
         slippage_bps=args.slippage_bps,
+        max_entry_price=args.max_entry_price,
     )
     print(f"\nConfig: threshold={p.threshold}  stop_loss={p.stop_loss_pct}  "
           f"spread={args.spread}  slippage_bps={args.slippage_bps}  "
