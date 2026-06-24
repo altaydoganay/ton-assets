@@ -51,7 +51,8 @@ class Settings(BaseSettings):
     # Helius ücretsiz katman ~10 istek/sn; 0.12 ≈ 8 istek/sn güvenli.
     # NOT: Bu throttle yalnızca arka plan KEŞİF analizinde uygulanır; canlı alım
     # yolunda (hız kritik) throttle KAPALIDIR.
-    rpc_min_interval_seconds: float = 0.12
+    # Developer planı 50 RPS; 0.04 ≈ 25 istek/sn güvenli ve hızlı.
+    rpc_min_interval_seconds: float = 0.04
     rpc_rate_limit_retries: int = 6
     # Canlı alımda token analizi önbelleği: token bu süre içinde puanlandıysa
     # yeniden analiz edilmez (anında karar = düşük gecikme).
@@ -93,16 +94,18 @@ class Settings(BaseSettings):
     # cüzdanı iki kez yakalamak zor olur. Kaliteyi puanlama+eleme belirler.
     discovery_min_token_hits: int = 1
     # Aynı anda izlenen (trade aboneliği açık) maksimum token sayısı
-    discovery_max_watched_tokens: int = 80
-    # Her arka plan döngüsünde analiz edilecek aday sayısı (Helius limitini koru)
+    discovery_max_watched_tokens: int = 120
+    # Her arka plan döngüsünde analiz edilecek aday sayısı. Helius Developer planı
+    # (10M kredi/ay) için dengelenmiş; aylık ~9M kredi içinde kalır.
     discovery_batch_size: int = 3
-    # Aday analizinde taranacak işlem sayısı
-    discovery_ingest_limit: int = 40
+    # Aday analizinde taranacak işlem sayısı (derinlik). Developer planında 80 —
+    # cüzdanların kriterleri karşılayacak yeterli geçmişi görülür.
+    discovery_ingest_limit: int = 80
     # Aday analiz döngüsü aralığı (saniye) — Celery beat
-    discovery_interval_seconds: int = 120
-    # Helius keşfinde dakikada en fazla kaç işlem detayı çekilsin (ücretsiz plan
-    # kredisini koru). Kota dolarsa bu değeri artır (planı yükselttikten sonra).
-    discovery_max_lookups_per_min: int = 30
+    discovery_interval_seconds: int = 90
+    # Helius keşfinde dakikada en fazla kaç işlem detayı çekilsin. Developer planı
+    # için 50; ücretsiz plana dönersen 30'a indir.
+    discovery_max_lookups_per_min: int = 50
 
     # --- Eşikler (varsayılan; veritabanındaki settings tablosu önceliklidir) ---
     min_wallet_score: float = 70.0

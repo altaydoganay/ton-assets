@@ -31,14 +31,19 @@ DEFAULT_WEIGHTS = {
     "recency": 0.05,
 }
 
+# Pump.fun gerçeğine uyarlanmış eşikler: pump.fun degen/hızlı bir ortamdır;
+# tokenler dakikalar-saatler yaşar. "30 gün geçmiş / 30 dk medyan tutma" gibi
+# katı kriterler gerçek pump.fun trader'larını bile eler. Bu değerler hızlı ama
+# TUTARLI trader'ları geçirip tek-atışlık/rug cüzdanları elemeye dengelenmiştir.
+# Tümü panelden değiştirilebilir (API ve RPC Ayarları).
 DEFAULT_ELIGIBILITY = {
-    "min_closed_positions": 20,
-    "min_distinct_tokens": 10,
-    "min_history_days": 30,
-    "min_win_rate": 0.60,
-    "min_median_hold_seconds": 1800,   # 30 dk
-    "max_short_hold_ratio": 0.35,      # <10 dk kapanışlar
-    "max_single_trade_pnl_share": 0.60,
+    "min_closed_positions": 10,
+    "min_distinct_tokens": 5,
+    "min_history_days": 5,
+    "min_win_rate": 0.55,
+    "min_median_hold_seconds": 300,    # 5 dk
+    "max_short_hold_ratio": 0.65,      # <10 dk kapanışlar
+    "max_single_trade_pnl_share": 0.70,
 }
 
 

@@ -41,11 +41,16 @@ def record_candidate(db: Session, address: str, source: str = "auto") -> bool:
 
 
 def pending_candidates(db: Session, limit: int) -> list[Wallet]:
-    """Henüz analiz edilmemiş keşfedilmiş cüzdanlar (en eski önce)."""
+    """Henüz analiz edilmemiş keşfedilmiş cüzdanlar.
+
+    EN YENİ önce: güncel/aktif trader'ları öncelikle analiz ederiz; eski (ör.
+    önceki dönemden kalma) stale adaylar boşta kalan kapasitede işlenir. Böylece
+    şu an işlem yapan kaliteli cüzdanlar daha hızlı yüzeye çıkar.
+    """
     return (
         db.query(Wallet)
         .filter(Wallet.status == WalletStatus.discovered.value, Wallet.last_analyzed.is_(None))
-        .order_by(Wallet.first_seen.asc())
+        .order_by(Wallet.first_seen.desc())
         .limit(limit)
         .all()
     )
