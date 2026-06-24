@@ -81,6 +81,8 @@ class HeliusListener:
         self.notifier = TelegramNotifier()
         # hızlı (throttle kapalı) sağlayıcı — canlı/keşif getTransaction için
         self.chain = build_chain_provider(throttle=False)
+        self.stat_lookups = 0      # keşif için incelenen işlem sayısı
+        self.stat_candidates = 0   # eklenen yeni aday sayısı
         self.sub_meta: dict[int, tuple[str, str | None]] = {}  # sub_id -> (kind, wallet)
         self.pending: dict[int, tuple[str, str | None]] = {}   # req_id -> (kind, wallet)
         self.subscribed_accounts: set[str] = set()
@@ -116,6 +118,9 @@ class HeliusListener:
         while True:
             try:
                 await asyncio.to_thread(self._heartbeat)
+                # ASCII etiketli durum logu (Windows findstr ile aranabilir)
+                logger.info("[DISCOVERY] lookups=%d candidates=%d tracked_subs=%d",
+                            self.stat_lookups, self.stat_candidates, len(self.subscribed_accounts))
                 if settings.discovery_enabled and not self.discovery_sub_active:
                     await self._subscribe_logs(ws, PUMP_FUN_PROGRAM, "discovery", None)
                     self.discovery_sub_active = True
@@ -186,6 +191,7 @@ class HeliusListener:
             db.close()
 
     def _handle_discovery(self, sig: str):
+        self.stat_lookups += 1
         try:
             ntx = self._fetch_ntx(sig)
             if ntx is None:
@@ -193,7 +199,7 @@ class HeliusListener:
             for wallet, mint in extract_buyers(ntx):
                 self._record_buyer(wallet, mint)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("Keşif olayı atlandı: %s", exc)
+            logger.warning("[DISCOVERY] olay atlandı: %s", exc)
 
     def _record_buyer(self, trader: str, mint: str):
         if trader in self.known_candidates:
@@ -206,9 +212,10 @@ class HeliusListener:
             db = SessionLocal()
             try:
                 if record_candidate(db, trader, source="auto-helius"):
-                    logger.info("Yeni aday cüzdan keşfedildi: %s", trader)
+                    self.stat_candidates += 1
+                    logger.info("[DISCOVERY] new candidate %s", trader)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("Aday kaydedilemedi: %s", exc)
+                logger.warning("[DISCOVERY] aday kaydedilemedi: %s", exc)
             finally:
                 db.close()
         if len(self.buyer_hits) > 20000:
@@ -230,7 +237,7 @@ class HeliusListener:
             self.discovery_sub_active = False
             try:
                 async with websockets.connect(url, ping_interval=20, max_size=8_000_000) as ws:
-                    logger.info("Helius WS'e bağlanıldı (keşif=%s)", settings.discovery_enabled)
+                    logger.info("[LISTENER] Helius WS connected (discovery=%s)", settings.discovery_enabled)
                     backoff = 1.0
                     refresher = asyncio.create_task(self._refresh(ws))
                     try:
