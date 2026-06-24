@@ -6,9 +6,9 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential curl && rm -rf /var/lib/apt/lists/*
-
+# NOT: build-essential (C derleyici) KURULMAZ. Kullandığımız tüm Python paketleri
+# (cryptography, psycopg[binary], uvicorn[standard]…) hazır manylinux wheel olarak
+# gelir; derleyici gerekmez. Bu, build'i çok hızlandırır ve belleği korur.
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
