@@ -36,6 +36,10 @@ class Config:
     # live (secrets come from env, never the yaml)
     clob_host: str = "https://clob.polymarket.com"
     chain_id: int = 137
+    # wallet model: 0 = EOA holds USDC directly; 1 = email/Magic proxy;
+    # 2 = browser-wallet (Gnosis Safe) proxy. Web signups are usually 1 or 2,
+    # with funds in a proxy wallet -> set FUNDER_ADDRESS in .env.
+    signature_type: int = 0
 
     # internal
     raw: dict = field(default_factory=dict)

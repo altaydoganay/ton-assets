@@ -60,10 +60,14 @@ class PolymarketBroker(Broker):
         pk = os.environ.get("PRIVATE_KEY")
         if not pk:
             raise RuntimeError("PRIVATE_KEY env var is required for live mode")
+        funder = os.environ.get("FUNDER_ADDRESS")  # proxy wallet for sig_type 1/2
 
         self.cfg = cfg
-        self.client = ClobClient(cfg.clob_host, key=pk, chain_id=cfg.chain_id,
-                                 signature_type=0)
+        kwargs = dict(key=pk, chain_id=cfg.chain_id,
+                      signature_type=cfg.signature_type)
+        if funder:
+            kwargs["funder"] = funder
+        self.client = ClobClient(cfg.clob_host, **kwargs)
         # derive/attach L2 API credentials for order signing
         creds = self.client.create_or_derive_api_creds()
         self.client.set_api_creds(creds)

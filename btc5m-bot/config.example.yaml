@@ -27,3 +27,7 @@ poll_sec: 3
 # --- live endpoints (no secrets) ---
 clob_host: https://clob.polymarket.com
 chain_id: 137
+# 0 = your wallet (EOA) holds USDC directly
+# 1 = email/Magic Polymarket account (funds in a proxy wallet -> set FUNDER_ADDRESS)
+# 2 = browser-wallet Polymarket account (Gnosis Safe proxy -> set FUNDER_ADDRESS)
+signature_type: 0
