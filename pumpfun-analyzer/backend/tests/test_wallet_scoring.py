@@ -59,6 +59,16 @@ def test_insufficient_sample_not_eligible():
     assert len(res.eligibility_failures) > 0
 
 
+def test_idle_wallet_not_eligible():
+    """Aktif cüzdana öncelik: uzun süredir işlem yapmamış cüzdan takibe alınmaz."""
+    perf = compute_performance(_build_good_swaps())
+    idle = score_wallet(perf, WalletSignals(history_days=45, days_since_last_trade=20))
+    assert idle.eligible is False
+    assert any("aktif değil" in f for f in idle.eligibility_failures)
+    active = score_wallet(perf, WalletSignals(history_days=45, days_since_last_trade=3))
+    assert active.eligible is True
+
+
 def test_weights_are_configurable():
     perf = compute_performance(_build_good_swaps())
     # copy riski var (veto eşiğinin altında) => safety alt puanı düşük

@@ -1,9 +1,12 @@
 """Geçmiş işlem replay testi — gerçek para/ağ kullanmadan tam hat doğrulaması."""
+import time
+
 from app.core.analysis.swap_detection import NormalizedTx, PUMP_FUN_PROGRAM, SYSTEM_PROGRAM, TOKEN_PROGRAM
 from app.adapters.base import ChainProvider
 from app.services.pipeline import ingest_wallet, analyze_wallet, replay_transactions
 
 WALLET = "ReplayWallet111111111111111111111111111111"
+_NOW = int(time.time())
 
 
 def _ntx(sig, bt, sol, tok, mint, programs, fee=0.0005):
@@ -15,9 +18,12 @@ def _ntx(sig, bt, sol, tok, mint, programs, fee=0.0005):
 
 
 def _history():
-    """12 token üzerinde 24 kapalı pozisyon + araya bir airdrop transferi."""
+    """12 token üzerinde 24 kapalı pozisyon + araya bir airdrop transferi.
+
+    Zaman ekseni ŞİMDİye sabitlenir: son işlem ~2 gün önce biter (aktiflik
+    kriterini geçer); geçmiş ~55 güne yayılır (history_days kriterini geçer)."""
     txs = []
-    t = 1_700_000_000
+    t = _NOW - 5_000_000  # ~58 gün önce başla
     for i in range(12):
         mint = f"Mint{i}"
         for _ in range(2):

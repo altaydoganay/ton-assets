@@ -17,29 +17,35 @@ DEFAULTS: dict[str, dict] = {
     "token_weights": TOKEN_WEIGHTS,
     "thresholds": {"wallet": 70.0, "token": 70.0},
     "risk": {
-        "enabled": False,
+        # Paper (simülasyon) işlem motoru varsayılan AÇIK — risksizdir; CANLI
+        # (gerçek para) ayrı bir onaya bağlıdır (live_confirmed) ve KAPALI kalır.
+        "enabled": True,
         "mode": "paper",
         "live_confirmed": False,
+        # İşlem kapısı: token bir GÜVENLİK filtresidir. "balanced" = güvenlik
+        # vetosu + düşük kalite tabanı (≥55): işlem açılır ama "her token"de değil.
+        # "safety" | "balanced" | "score" (bkz. trading/risk.py).
+        "token_gate": "balanced",
         "fixed_sol_amount": 0.05,
         "proportional": False,
         "proportional_factor": 1.0,
-        "max_position_sol": 0.5,
-        "max_daily_spend_sol": 2.0,
-        "max_daily_loss_sol": 1.0,
+        "max_position_sol": 0.2,
+        "max_daily_spend_sol": 1.0,
+        "max_daily_loss_sol": 0.5,
         "max_slippage": 0.15,
         "priority_fee_sol": 0.0005,
         "min_wallet_score": 70.0,
-        "min_token_score": 70.0,
+        "min_token_score": 70.0,   # yalnızca token_gate="score" modunda uygulanır
         "max_open_positions_per_token": 1,
         "max_follow_lag_seconds": 60,
-        "min_liquidity_sol": 5.0,
+        "min_liquidity_sol": 5.0,  # yalnızca ölçülebildiğinde uygulanır
         "emergency_stop": False,
         "blocked_wallets": [],
         "blocked_tokens": [],
         "only_wallets": [],
         "close_mode": "proportional",
-        "take_profit_pct": 0.0,   # 0 = kapalı; örn. 0.5 = +%50'de sat
-        "stop_loss_pct": 0.0,     # 0 = kapalı; örn. 0.3 = -%30'da sat
+        "take_profit_pct": 0.6,   # +%60'da sat (dengeli)
+        "stop_loss_pct": 0.3,     # -%30'da sat (dengeli)
     },
 }
 
@@ -81,6 +87,25 @@ def seed_defaults(db: Session) -> None:
         elig.value = DEFAULTS["wallet_eligibility"]
         db.commit()
 
+    # Tek seferlik risk politikası yükseltmesi (v4): DENGELİ işlem kapısı (güvenlik
+    # vetosu + token ≥55) + paper motorunu aç + dengeli TP/SL. Yalnızca BİR KEZ
+    # uygulanır (işaret konur), böylece sonradan paneldeki kullanıcı tercihleri
+    # ezilmez. CANLI işleme (live_confirmed) ASLA dokunulmaz.
+    if not db.query(Setting).filter(Setting.key == "_meta_risk_policy_v4").first():
+        risk = get_setting(db, "risk")
+        risk["token_gate"] = "balanced"
+        if not risk.get("live_confirmed"):
+            risk["enabled"] = True
+            risk["mode"] = "paper"
+        if not risk.get("take_profit_pct"):
+            risk["take_profit_pct"] = 0.6
+        if not risk.get("stop_loss_pct"):
+            risk["stop_loss_pct"] = 0.3
+        if risk.get("max_daily_spend_sol", 0) > 1.0:
+            risk["max_daily_spend_sol"] = 1.0
+        set_setting(db, "risk", risk)
+        set_setting(db, "_meta_risk_policy_v4", {"applied": True})
+
 
 def all_settings(db: Session) -> dict[str, dict]:
     return {key: get_setting(db, key) for key in DEFAULTS}
@@ -92,16 +117,19 @@ RISK_PROFILES: dict[str, dict] = {
         "fixed_sol_amount": 0.02, "max_position_sol": 0.05, "max_daily_spend_sol": 0.3,
         "max_daily_loss_sol": 0.1, "max_slippage": 0.08, "min_wallet_score": 80,
         "min_token_score": 80, "min_liquidity_sol": 15, "max_open_positions_per_token": 1,
+        "take_profit_pct": 0.4, "stop_loss_pct": 0.25,
     },
     "dengeli": {
         "fixed_sol_amount": 0.05, "max_position_sol": 0.2, "max_daily_spend_sol": 1.0,
         "max_daily_loss_sol": 0.5, "max_slippage": 0.15, "min_wallet_score": 70,
         "min_token_score": 70, "min_liquidity_sol": 5, "max_open_positions_per_token": 1,
+        "take_profit_pct": 0.6, "stop_loss_pct": 0.3,
     },
     "agresif": {
         "fixed_sol_amount": 0.1, "max_position_sol": 0.5, "max_daily_spend_sol": 3.0,
         "max_daily_loss_sol": 1.5, "max_slippage": 0.25, "min_wallet_score": 65,
         "min_token_score": 65, "min_liquidity_sol": 3, "max_open_positions_per_token": 2,
+        "take_profit_pct": 1.0, "stop_loss_pct": 0.35,
     },
 }
 

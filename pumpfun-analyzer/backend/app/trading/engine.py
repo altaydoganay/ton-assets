@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from ..models import LiveTrade, PaperTrade
 from .paper import PaperTradingEngine
-from .risk import DayState, RiskConfig, RiskDecision, evaluate_buy
+from .risk import DayState, RiskConfig, RiskDecision, effective_min_token_score, evaluate_buy
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +56,15 @@ class CopyTradeEngine:
         self.day = DayState()
 
     def _recheck_safety(self, ctx: TradeContext) -> list[str]:
-        """İşlem göndermeden hemen önce son güvenlik kontrolü."""
+        """İşlem göndermeden hemen önce son güvenlik kontrolü (kapı politikasına
+        duyarlı; "safety" modunda token puanı engel değildir)."""
         problems = []
         if not ctx.token_sellable:
             problems.append("Token satılabilir değil (son kontrol)")
-        if ctx.token_score < self.cfg.min_token_score:
+        min_token = effective_min_token_score(self.cfg)
+        if min_token > 0 and ctx.token_score < min_token:
             problems.append("Token puanı eşik altına düştü (son kontrol)")
-        if ctx.token_liquidity_sol < self.cfg.min_liquidity_sol:
+        if 0 < ctx.token_liquidity_sol < self.cfg.min_liquidity_sol:
             problems.append("Likidite eşik altına düştü (son kontrol)")
         return problems
 

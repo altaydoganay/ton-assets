@@ -25,6 +25,12 @@ class RiskConfig:
     priority_fee_sol: float = 0.0005
     min_wallet_score: float = 70.0
     min_token_score: float = 70.0
+    # İşlem kapısı politikası:
+    #   "safety"   → token yalnızca GÜVENLİK vetosundan geçer (sat/mint/freeze/
+    #                honeypot). Ayrı puan eşiği UYGULANMAZ. Cüzdan = alpha.
+    #   "balanced" → güvenlik + düşük kalite tabanı (token ≥ 55). VARSAYILAN.
+    #   "score"    → güvenlik + min_token_score (klasik katı mod).
+    token_gate: str = "balanced"
     max_open_positions_per_token: int = 1
     max_follow_lag_seconds: int = 60
     min_liquidity_sol: float = 5.0
@@ -47,6 +53,21 @@ class RiskDecision:
     allowed: bool
     reasons: list[str] = field(default_factory=list)
     sol_amount: float = 0.0
+
+
+def effective_min_token_score(cfg: "RiskConfig") -> float:
+    """İşlem kapısı politikasına göre uygulanacak ASGARİ token puanı.
+
+    "safety" modunda token puanı bir engel DEĞİLDİR (güvenlik vetosu yukarıda
+    canlı akışta zaten uygulanır); taze bonding token'leri düşük puan alır ama
+    güvenliyse işlem yapılır.
+    """
+    gate = getattr(cfg, "token_gate", "balanced")
+    if gate == "safety":
+        return 0.0
+    if gate == "balanced":
+        return 55.0
+    return cfg.min_token_score  # "score"
 
 
 def evaluate_buy(
@@ -79,11 +100,16 @@ def evaluate_buy(
         reasons.append("Cüzdan seçili kopyalama listesinde değil")
     if wallet_score < cfg.min_wallet_score:
         reasons.append(f"Cüzdan puanı < {cfg.min_wallet_score}")
-    if token_score < cfg.min_token_score:
-        reasons.append(f"Token puanı < {cfg.min_token_score}")
+    min_token = effective_min_token_score(cfg)
+    if min_token > 0 and token_score < min_token:
+        reasons.append(f"Token puanı < {min_token:.0f}")
     if not token_sellable:
         reasons.append("Token satılabilir değil (honeypot riski)")
-    if token_liquidity_sol < cfg.min_liquidity_sol:
+    # Likidite yalnızca ÖLÇÜLEBİLDİĞİNDE (>0) ve eşik altındaysa engeller. Taze
+    # bonding token'leri DexScreener'da olmayabilir (likidite=0=bilinmiyor); eksik
+    # veriyi "0 likidite" sayıp reddetmek hatalıdır — güvenlik vetosu + pozisyon
+    # limiti korur.
+    if 0 < token_liquidity_sol < cfg.min_liquidity_sol:
         reasons.append("Likidite eşik altında")
     if follow_lag_seconds > cfg.max_follow_lag_seconds:
         reasons.append("İşlem gecikmesi izleme penceresini aştı")

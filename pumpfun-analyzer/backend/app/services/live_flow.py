@@ -25,7 +25,7 @@ from ..adapters.pumpportal import PumpPortalTrade, PumpPortalTrader
 from ..adapters.registry import build_chain_provider, build_market_provider
 from ..config import settings
 from ..core.analysis.swap_detection import DetectedSwap
-from ..models import Token, TokenStatus, Wallet, WalletStatus
+from ..models import AuditLog, Token, TokenStatus, Wallet, WalletStatus
 from ..notifications.telegram import AlertContent, TelegramNotifier, short_addr
 from ..trading.engine import CopyTradeEngine, TradeContext, LiveTradingNotConfigured
 from ..trading.risk import RiskConfig
@@ -36,6 +36,16 @@ from .token_analysis import assess_token
 logger = logging.getLogger(__name__)
 
 _engine: CopyTradeEngine | None = None
+
+
+def _audit(db: Session, level: str, message: str, context: dict) -> None:
+    """Takip olayının kararını Loglar sayfasına yazar (şeffaflık/ayar için).
+    Başarısız olsa bile akışı bozmaz."""
+    try:
+        db.add(AuditLog(level=level, category="trading", message=message, context=context))
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
 
 
 def _risk_config(db: Session) -> RiskConfig:
@@ -55,6 +65,7 @@ def _risk_config(db: Session) -> RiskConfig:
         priority_fee_sol=float(r.get("priority_fee_sol", 0.0005)),
         min_wallet_score=float(r.get("min_wallet_score", thresholds.get("wallet", 70.0))),
         min_token_score=float(r.get("min_token_score", thresholds.get("token", 70.0))),
+        token_gate=str(r.get("token_gate", "balanced")),
         max_open_positions_per_token=int(r.get("max_open_positions_per_token", 1)),
         max_follow_lag_seconds=int(r.get("max_follow_lag_seconds", 60)),
         min_liquidity_sol=float(r.get("min_liquidity_sol", 5.0)),
@@ -123,7 +134,17 @@ def handle_trade_event(
     assessment = assess_token(db, trade.mint, chain, market, settings.token_score_cache_seconds)
     token = assessment.token
     token_threshold = get_setting(db, "thresholds").get("token", 70.0)
-    token_ok = (not assessment.vetoed) and assessment.total >= token_threshold
+    # İşlem kapısı politikası: cüzdan alpha; token bir GÜVENLİK filtresidir.
+    #   safety   → veto yoksa geç (taze bonding token'lerin düşük puanı engel değil)
+    #   balanced → veto yok + puan ≥ 55  (VARSAYILAN: işlem açılır ama her token'de değil)
+    #   score    → veto yok + puan ≥ eşik (klasik katı)
+    token_gate = get_setting(db, "risk").get("token_gate", "balanced")
+    if token_gate == "score":
+        token_ok = (not assessment.vetoed) and assessment.total >= token_threshold
+    elif token_gate == "balanced":
+        token_ok = (not assessment.vetoed) and assessment.total >= 55.0
+    else:  # safety
+        token_ok = not assessment.vetoed
 
     market_price_sol = swap.price_sol
     liquidity_sol = assessment.liquidity_sol
@@ -150,7 +171,12 @@ def handle_trade_event(
     # ALIM
     if not token_ok:
         summary["action"] = "skipped"
-        summary["reason"] = "token puanı eşik altında / veto"
+        reason = ("güvenlik vetosu: " + ", ".join(assessment.veto_reasons)) if assessment.vetoed \
+            else f"token puanı {assessment.total:.0f} < kapı eşiği ({token_gate})"
+        summary["reason"] = reason
+        _audit(db, "info", f"Atlandı — {short_addr(trade.trader)} → {short_addr(trade.mint)}: {reason}",
+               {"wallet": trade.trader, "token": trade.mint, "wallet_score": wallet.latest_score,
+                "token_score": assessment.total, "gate": token_gate, "signature": trade.signature})
         return summary
 
     # 4) Telegram bildirimi (dedup'lı) — işlemden bağımsız
@@ -185,6 +211,21 @@ def handle_trade_event(
     summary["traded"] = bool(decision and decision.allowed)
     if decision and not decision.allowed:
         summary["trade_blocked"] = decision.reasons
+    # Karar logu (Loglar sayfası): işlem yapıldı mı / neden yapılmadı
+    if decision and decision.allowed:
+        _audit(db, "info",
+               f"İşlem AÇILDI — {short_addr(trade.trader)} → {short_addr(trade.mint)} "
+               f"({engine.cfg.mode}, {decision.sol_amount:.3f} SOL)",
+               {"wallet": trade.trader, "token": trade.mint, "wallet_score": wallet.latest_score,
+                "token_score": assessment.total, "sol_amount": decision.sol_amount,
+                "mode": engine.cfg.mode, "signature": trade.signature})
+    else:
+        block = decision.reasons if decision else ["işlem motoru kapalı (yalnızca bildirim)"]
+        _audit(db, "info",
+               f"Bildirim gönderildi, işlem YOK — {short_addr(trade.trader)} → "
+               f"{short_addr(trade.mint)}: {', '.join(block)}",
+               {"wallet": trade.trader, "token": trade.mint, "wallet_score": wallet.latest_score,
+                "token_score": assessment.total, "blocked": block, "signature": trade.signature})
     return summary
 
 

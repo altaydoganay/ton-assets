@@ -5,12 +5,15 @@ Gerçek ağ/kredi kullanmadan: Helius enhanced şemasına benzer sahte sayfalar
 eder. Aynı `detect_swap` mantığının enhanced veriden de doğru swap çıkardığını
 ve eleme kriterlerini karşılayan bir geçmişin `tracked` olduğunu doğrular.
 """
+import time
+
 from app.adapters.base import ChainProvider
 from app.adapters.pumpfun import normalize_enhanced_transaction
 from app.core.analysis.swap_detection import PUMP_FUN_PROGRAM, detect_swap
 from app.services.pipeline import ingest_wallet, analyze_wallet
 
 WALLET = "EnhWallet1111111111111111111111111111111111"
+_NOW = int(time.time())
 
 
 def _enh(sig, ts, sol_lamports, tok_raw, mint, decimals=6, source="PUMP_FUN"):
@@ -97,7 +100,7 @@ def _good_history():
     bazlı idempotent olduğundan diğer testlerle çakışma (izolasyon) önlenir.
     """
     txs = []
-    t = 1_700_000_000
+    t = _NOW - 5_000_000  # ~58 gün önce başla; son işlem ~2 gün önce (aktif)
     for i in range(8):
         mint = f"MintENH{i}"
         for _ in range(3):

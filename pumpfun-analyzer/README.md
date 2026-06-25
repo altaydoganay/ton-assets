@@ -187,11 +187,25 @@ uyarıları ve otomatik işlem yapılıp yapılmadığı.
 
 ## Otomatik kopya işlem ve güvenlik
 
-Otomatik işlem **varsayılan olarak KAPALIDIR**. Bildirim sistemi ile işlem motoru
-**bağımsız** çalışır: otomatik alım, Telegram mesajı beklenmeden zincir üstü olay
-akışıyla tetiklenir.
+**PAPER (simülasyon) motoru varsayılan olarak AÇIKTIR** — risksizdir, gerçek para
+kullanmaz; takipteki bir cüzdan uygun bir token aldığında otomatik bir *kâğıt*
+işlem açar ve `İşlem Geçmişi`/`Açık Pozisyonlar`da görünür. **CANLI (gerçek para)
+işlem KAPALIDIR** ve ayrı bir onaya (`live_confirmed`) + keystore'a bağlıdır.
+Bildirim sistemi ile işlem motoru **bağımsız** çalışır.
 
-**Modlar:** `paper` (tam simülasyon, varsayılan) · `alerts_only` · `live`.
+**İşlem kapısı (`token_gate`)** — token bir KALİTE notundan çok bir GÜVENLİK
+filtresidir; çünkü kopya-ticarette asıl sinyal **cüzdandır** (akıllı para). Taze
+pump.fun token'leri doğası gereği düşük "kalite" puanı alır (likidite/holder
+verisi henüz oluşmamıştır), bu yüzden katı bir 70 eşiği neredeyse hiç işlem
+açtırmaz. Üç politika (Risk Ayarları'ndan seçilir):
+- **`balanced` (VARSAYILAN):** güvenlik vetosu (rug/honeypot/aktif mint-freeze)
+  yok **ve** token puanı ≥ 55. *İşlem açılır ama "her token"de değil* — çöp/tek-
+  holder bonding token'leri elenir, olgunlaşmış güvenli token'ler işlem açar.
+- **`safety`:** yalnızca güvenlik vetosu (puan eşiği yok). En çok işlem; cüzdana
+  tam güven. Daha agresif.
+- **`score`:** güvenlik + tam `min_token_score` (klasik katı; çok az işlem).
+
+**Modlar:** `paper` (tam simülasyon, varsayılan AÇIK) · `alerts_only` · `live`.
 Canlı işlem yalnızca kullanıcı panelde riskleri onaylayıp (`live_confirmed`) ayrı
 bir trading cüzdanı tanımladığında çalışır.
 
@@ -285,12 +299,16 @@ geçmişe sahip cüzdanlar girer. Daha fazla nitelikli cüzdan yüzeye çıkmas�
 > - Eşik/eleme/ağırlıklar panelden (API & Eşik Ayarları) gevşetilebilir; ama
 >   gevşetmek kaliteyi düşürür.
 
-**"İşlem (trade) hiç olmuyor."** Otomatik kopya işlem **varsayılan KAPALIDIR**
-(güvenlik). Bir takipteki cüzdan bir takipteki tokeni aldığında her zaman
-**Telegram bildirimi** gönderilir; ama **paper/canlı işlem** için Risk Ayarları
-sayfasında **İşlem Motoru = Açık** ve **Mod = paper** (risksiz simülasyon) seçilmeli.
-Ayrıca işlem ancak hem cüzdan **hem de** token ≥ 70 olduğunda tetiklenir; takip
-havuzu küçükken eşleşme nadirdir (yukarıdaki maddelerle havuzu büyütün).
+**"İşlem (trade) hiç olmuyor."** Artık **PAPER motoru varsayılan AÇIK** (risksiz
+simülasyon) ve işlem kapısı **`balanced`** olduğundan, takipteki bir cüzdan güvenli
+ve makul (≥55) bir token aldığında otomatik bir kâğıt işlem açılır + Telegram
+bildirimi gönderilir. Hâlâ işlem görmüyorsan sıra şu: (1) takip havuzunun aktif
+cüzdan içermesi gerekir — uyuyan cüzdanlar alım yapmaz (bkz. yukarıdaki "az takip"
+maddesi); (2) önceki katı sürümden gelen bir kayıt varsa Risk Ayarları'nda
+**İşlem Motoru = Açık**, **Mod = paper**, **Kapı = balanced** olduğunu doğrula;
+(3) daha çok işlem istiyorsan kapıyı **`safety`**'ye al (cüzdana tam güven, token
+sadece rug filtresinden geçer). **Gerçek para** için: Mod = `live` + canlı onay +
+keystore.
 
 **"Kredi çok hızlı tükeniyor."** En büyük kalemler: (1) keşif `getTransaction`
 sorguları → `DISCOVERY_MAX_LOOKUPS_PER_MIN` ile sınırla; (2) aday analizi →
