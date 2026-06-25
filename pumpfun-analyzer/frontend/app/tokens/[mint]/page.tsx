@@ -1,5 +1,5 @@
 "use client";
-import { use } from "react";
+import { useParams } from "next/navigation";
 import useSWR from "swr";
 import { fetcher, apiSend, shortAddr, fmtNum } from "@/lib/api";
 import { PageHeader, Confidence } from "@/components/Confidence";
@@ -10,8 +10,9 @@ import { CopyButton } from "@/components/ui";
 import { solscanToken, pumpfunToken } from "@/lib/links";
 import { ExternalLink } from "lucide-react";
 
-export default function TokenDetail({ params }: { params: Promise<{ mint: string }> }) {
-  const { mint } = use(params);
+export default function TokenDetail() {
+  const params = useParams();
+  const mint = params.mint as string;
   const { data: t, error, isLoading, mutate } = useSWR<any>(`/tokens/${mint}`, fetcher);
   const { data: history } = useSWR<any[]>(`/tokens/${mint}/score-history`, fetcher);
   const { data: holders } = useSWR<any[]>(`/tokens/${mint}/holders`, fetcher);

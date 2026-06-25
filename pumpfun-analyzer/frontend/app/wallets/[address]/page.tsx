@@ -1,5 +1,6 @@
 "use client";
-import { use, useState } from "react";
+import { useState } from "react";
+import { useParams } from "next/navigation";
 import useSWR from "swr";
 import Link from "next/link";
 import { fetcher, apiSend, shortAddr, fmtNum } from "@/lib/api";
@@ -14,8 +15,9 @@ import { useToast } from "@/components/Toast";
 import { Loading, ErrorState } from "@/components/States";
 import { ExternalLink, RefreshCw, Ban, Check } from "lucide-react";
 
-export default function WalletDetail({ params }: { params: Promise<{ address: string }> }) {
-  const { address } = use(params);
+export default function WalletDetail() {
+  const params = useParams();
+  const address = params.address as string;
   const toast = useToast();
   const { data: w, error, isLoading, mutate } = useSWR<any>(`/wallets/${address}`, fetcher);
   const { data: history } = useSWR<any[]>(`/wallets/${address}/score-history`, fetcher);
