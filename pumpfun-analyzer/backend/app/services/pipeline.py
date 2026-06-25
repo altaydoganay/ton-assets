@@ -164,7 +164,7 @@ def analyze_wallet(
         "history_days": history_days,
     }
     if persist:
-        persist_wallet_score(db, wallet, result, metrics=metrics)
+        persist_wallet_score(db, wallet, result, metrics=metrics, demote_below=max(0.0, threshold - 5))
     return result
 
 

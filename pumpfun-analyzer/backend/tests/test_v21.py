@@ -55,3 +55,29 @@ def test_resend_alert(db):
     r = client.post(f"/api/alerts/{a.id}/resend")
     assert r.status_code == 200 and "sent" in r.json()
     assert client.post("/api/alerts/999999/resend").status_code == 404
+
+
+def test_tracked_hysteresis(db):
+    """Takipteki cüzdan 65-70 bandında takipte kalır, 65 altında düşer."""
+    from app.models import Wallet, WalletStatus
+    from app.core.scoring.wallet_scoring import WalletScoreResult
+    from app.services.analysis_service import persist_wallet_score
+
+    def _res(total, eligible=True):
+        return WalletScoreResult(
+            total=total, performance=total, consistency=total, risk=total, organic=total,
+            hold_quality=total, safety=total, recency=total, breakdown={}, vetoed=False,
+            veto_reasons=[], eligible=eligible, eligibility_failures=[], confidence=0.9,
+            tracked=(eligible and total >= 70),
+        )
+
+    w = Wallet(address="HystW1", status=WalletStatus.tracked.value, latest_score=72)
+    db.add(w); db.commit()
+    # 67 (eligible, <70 ama >=65) => takipte kalmalı (histerezis)
+    persist_wallet_score(db, w, _res(67), demote_below=65)
+    db.refresh(w)
+    assert w.status == WalletStatus.tracked.value
+    # 63 (<65) => eşik altına düşer
+    persist_wallet_score(db, w, _res(63), demote_below=65)
+    db.refresh(w)
+    assert w.status == WalletStatus.below_threshold.value

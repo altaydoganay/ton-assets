@@ -22,7 +22,8 @@ from ..models import (
 )
 
 
-def persist_wallet_score(db: Session, wallet: Wallet, result: WalletScoreResult, metrics: dict | None = None) -> WalletScore:
+def persist_wallet_score(db: Session, wallet: Wallet, result: WalletScoreResult,
+                         metrics: dict | None = None, demote_below: float = 65.0) -> WalletScore:
     score = WalletScore(
         wallet_id=wallet.id,
         total=result.total,
@@ -50,15 +51,21 @@ def persist_wallet_score(db: Session, wallet: Wallet, result: WalletScoreResult,
     wallet.risk_flags = list(result.veto_reasons)
     wallet.last_analyzed = datetime.now(timezone.utc)
 
-    # Durum geçişi
+    # Durum geçişi (histerezisli): takibe girmek için tam eşik (≥70 + uygun + veto
+    # yok) gerekir; takipten ÇIKMAK için ise puanın `demote_below` (vars. 65) altına
+    # düşmesi gerekir. Böylece 65-70 bandında sürekli girip çıkma (flapping) önlenir.
+    was_tracked = wallet.status == WalletStatus.tracked.value
     if wallet.status == WalletStatus.blocked.value:
         pass  # kullanıcı engellemesi korunur
-    elif result.vetoed or not result.eligible:
-        wallet.status = WalletStatus.rejected.value if result.vetoed else WalletStatus.analyzed.value
+    elif result.vetoed:
+        wallet.status = WalletStatus.rejected.value
     elif result.tracked:
         wallet.status = WalletStatus.tracked.value
-    elif wallet.status == WalletStatus.tracked.value and result.total < 70:
-        # Daha önce takipteydi, eşik altına düştü => silme, işaretle
+    elif was_tracked and result.eligible and result.total >= demote_below:
+        # Takipteydi, hâlâ uygun ve puan histerezis bandında => takipte tut
+        wallet.status = WalletStatus.tracked.value
+    elif was_tracked:
+        # Takipteydi ama artık eşik altında => silme, işaretle
         wallet.status = WalletStatus.below_threshold.value
     else:
         wallet.status = WalletStatus.analyzed.value
