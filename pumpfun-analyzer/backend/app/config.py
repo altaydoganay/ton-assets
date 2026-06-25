@@ -114,6 +114,14 @@ class Settings(BaseSettings):
     # Bu, keşif `getTransaction` kredisinin ana kalemidir; bütçeye göre ayarla.
     discovery_max_lookups_per_min: int = 6
 
+    # --- Takip edilen cüzdan izleme (poll) ---
+    # Canlı WS dinleyicisi olay kaçırabildiğinden, takip edilen cüzdanların taze
+    # alımları periyodik POLL ile de yakalanır (işlem tetikleyici güvencesi).
+    # Her cüzdan için Enhanced ile TEK ucuz istek; sık ama ucuzdur.
+    tracked_poll_seconds: int = 45            # poll döngü aralığı (sn)
+    tracked_poll_per_wallet: int = 8          # her cüzdandan çekilecek son işlem sayısı
+    tracked_poll_fresh_seconds: int = 900     # yalnızca son N sn içindeki alımlar işlenir
+
     # --- Eşikler (varsayılan; veritabanındaki settings tablosu önceliklidir) ---
     min_wallet_score: float = 70.0
     min_token_score: float = 70.0

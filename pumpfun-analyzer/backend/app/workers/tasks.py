@@ -139,6 +139,59 @@ def manage_positions() -> dict:
         db.close()
 
 
+@celery_app.task(name="app.workers.tasks.poll_tracked_wallets")
+def poll_tracked_wallets() -> dict:
+    """Takip edilen cüzdanların TAZE alımlarını güvenilir biçimde yakalar (poll).
+
+    Canlı WS dinleyicisi olayları kaçırabildiğinden, bu görev her döngüde takip
+    edilen cüzdanların son işlemlerini Enhanced ile çeker ve taze alımları işleme
+    hattına yönlendirir. Redis ile imza-bazlı dedup (çift işlem yok)."""
+    from ..adapters.registry import build_market_provider
+    from ..services.wallet_watch import poll_tracked_wallets as _poll
+
+    db = SessionLocal()
+    try:
+      with _singleton("poll_tracked_wallets", ttl=120) as got:
+        if not got:
+            return {"skipped": "locked"}
+        # Redis TTL ile imza dedup (kaçıran/çift işlemeyi önler)
+        r = None
+        try:
+            import redis as _redis
+            r = _redis.from_url(settings.redis_url, socket_connect_timeout=2)
+        except Exception:  # noqa: BLE001
+            r = None
+        fresh = int(settings.tracked_poll_fresh_seconds)
+
+        def _should(sig: str) -> bool:
+            if r is None:
+                return True
+            try:
+                return bool(r.set(f"watch:{sig}", "1", nx=True, ex=fresh + 120))
+            except Exception:  # noqa: BLE001
+                return True
+
+        try:
+            chain = build_chain_provider(throttle=False)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Zincir sağlayıcı kurulamadı (watch): %s", exc)
+            return {"triggered": 0, "error": "provider"}
+        signer = None
+        try:
+            if settings.pumpportal_api_key:
+                from ..adapters.pumpportal import PumpPortalTrader
+                signer = PumpPortalTrader()
+        except Exception:  # noqa: BLE001
+            signer = None
+        return _poll(
+            db, chain, market=build_market_provider(), signer=signer,
+            per_wallet=int(settings.tracked_poll_per_wallet),
+            fresh_seconds=fresh, should_process=_should,
+        )
+    finally:
+        db.close()
+
+
 @celery_app.task(name="app.workers.tasks.reanalyze_tracked")
 def reanalyze_tracked() -> dict:
     db = SessionLocal()

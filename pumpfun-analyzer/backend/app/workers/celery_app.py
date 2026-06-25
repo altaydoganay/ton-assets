@@ -29,6 +29,12 @@ celery_app.conf.update(
         },
         # Takip edilen cüzdanları periyodik yeniden analiz et (puan güncelliği)
         "reanalyze-tracked": {"task": "app.workers.tasks.reanalyze_tracked", "schedule": 900.0},
+        # Takip edilen cüzdanların TAZE alımlarını güvenilir biçimde yakala (poll)
+        # — canlı WS olayları kaçırabildiğinden işlem tetikleyici GÜVENCESİ budur.
+        "poll-tracked-wallets": {
+            "task": "app.workers.tasks.poll_tracked_wallets",
+            "schedule": float(settings.tracked_poll_seconds),
+        },
         # Açık paper pozisyonlarında take-profit / stop-loss kontrolü
         "manage-positions": {"task": "app.workers.tasks.manage_positions", "schedule": 60.0},
         # Analiz edilmiş umut vadeden cüzdanları güncel kriterlerle yeniden değerlendir

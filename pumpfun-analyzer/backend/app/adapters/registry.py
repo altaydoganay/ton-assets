@@ -16,10 +16,13 @@ from .rpc import SolanaRpcAdapter
 def build_chain_provider(throttle: bool = True) -> ChainProvider:
     """Zincir sağlayıcı. `throttle=False` (canlı alım yolu) hız limiti beklemesi
     uygulamaz — düşük gecikme için. Arka plan keşfinde `throttle=True` kalır."""
-    provider = settings.chain_provider.lower()
     mi = settings.rpc_min_interval_seconds if throttle else 0.0
     rr = settings.rpc_rate_limit_retries
-    if provider == "helius" and settings.helius_api_key:
+    # HELIUS_API_KEY tanımlıysa DAİMA Helius kullan — Enhanced Transactions
+    # (cüzdan başına tek istek) hem ~10× daha ucuz hem de daha derindir. Eski
+    # .env'de CHAIN_PROVIDER=rpc kalmış olsa bile bu ayar tuzağına düşmeyiz;
+    # anahtar = niyet. (Anahtar YOKSA otomatik standart RPC'ye düşülür.)
+    if settings.helius_api_key:
         return HeliusAdapter(
             api_key=settings.helius_api_key, rpc_url=settings.helius_rpc_url or None,
             min_interval=mi, rate_limit_retries=rr,

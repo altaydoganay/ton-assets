@@ -299,16 +299,22 @@ geçmişe sahip cüzdanlar girer. Daha fazla nitelikli cüzdan yüzeye çıkmas�
 > - Eşik/eleme/ağırlıklar panelden (API & Eşik Ayarları) gevşetilebilir; ama
 >   gevşetmek kaliteyi düşürür.
 
-**"İşlem (trade) hiç olmuyor."** Artık **PAPER motoru varsayılan AÇIK** (risksiz
-simülasyon) ve işlem kapısı **`balanced`** olduğundan, takipteki bir cüzdan güvenli
-ve makul (≥55) bir token aldığında otomatik bir kâğıt işlem açılır + Telegram
-bildirimi gönderilir. Hâlâ işlem görmüyorsan sıra şu: (1) takip havuzunun aktif
-cüzdan içermesi gerekir — uyuyan cüzdanlar alım yapmaz (bkz. yukarıdaki "az takip"
-maddesi); (2) önceki katı sürümden gelen bir kayıt varsa Risk Ayarları'nda
-**İşlem Motoru = Açık**, **Mod = paper**, **Kapı = balanced** olduğunu doğrula;
-(3) daha çok işlem istiyorsan kapıyı **`safety`**'ye al (cüzdana tam güven, token
-sadece rug filtresinden geçer). **Gerçek para** için: Mod = `live` + canlı onay +
-keystore.
+**"İşlem (trade) hiç olmuyor."** Üç katmanlı güvence var: (a) **PAPER motoru
+varsayılan AÇIK** (risksiz), (b) işlem kapısı **`balanced`**, (c) **poll izleyici**
+— canlı WS dinleyicisi (`logsSubscribe`) olay KAÇIRABİLDİĞİNDEN, takip edilen
+cüzdanların taze alımları ayrıca her ~45 sn'de Enhanced poll ile GÜVENİLİR biçimde
+yakalanır (`TRACKED_POLL_SECONDS`). Yani takipteki bir cüzdan güvenli + makul (≥55)
+bir token alır almaz kâğıt işlem açılır + bildirim düşer; her kararın gerekçesi
+**Loglar** sayfasına yazılır. Hâlâ işlem yoksa: (1) takip havuzunun **aktif** cüzdan
+içermesi gerekir — uyuyan cüzdan alım yapmaz (Loglar'da "fresh_buys=0" görürsün);
+(2) daha çok işlem istiyorsan kapıyı **`safety`**'ye al. **Gerçek para** için:
+Mod = `live` + canlı onay + keystore.
+
+**"Kredi çok hızlı tükeniyor (ör. 3M/gün)."** Neredeyse her zaman Enhanced yolunun
+AKTİF OLMAMASINDANDIR (eski `.env`'de `CHAIN_PROVIDER=rpc` → cüzdan başına ~150 ayrı
+`getTransaction`). Düzeltildi: **`HELIUS_API_KEY` tanımlıysa CHAIN_PROVIDER ne olursa
+olsun otomatik Helius Enhanced kullanılır** (tek istek, ~10× az kredi). Yeniden
+derleyip başlatınca kredi kullanımı dramatik düşer.
 
 **"Kredi çok hızlı tükeniyor."** En büyük kalemler: (1) keşif `getTransaction`
 sorguları → `DISCOVERY_MAX_LOOKUPS_PER_MIN` ile sınırla; (2) aday analizi →
