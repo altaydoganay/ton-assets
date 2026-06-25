@@ -28,9 +28,10 @@ class RiskConfig:
     # İşlem kapısı politikası:
     #   "safety"   → token yalnızca GÜVENLİK vetosundan geçer (sat/mint/freeze/
     #                honeypot). Ayrı puan eşiği UYGULANMAZ. Cüzdan = alpha.
-    #   "balanced" → güvenlik + düşük kalite tabanı (token ≥ 55). VARSAYILAN.
+    #   "balanced" → güvenlik + düşük kalite tabanı (token ≥ 55).
     #   "score"    → güvenlik + min_token_score (klasik katı mod).
-    token_gate: str = "balanced"
+    # VARSAYILAN "safety": taze token'ler adil puanlanamaz; asıl sinyal cüzdandır.
+    token_gate: str = "safety"
     max_open_positions_per_token: int = 1
     max_follow_lag_seconds: int = 60
     min_liquidity_sol: float = 5.0
@@ -62,7 +63,7 @@ def effective_min_token_score(cfg: "RiskConfig") -> float:
     canlı akışta zaten uygulanır); taze bonding token'leri düşük puan alır ama
     güvenliyse işlem yapılır.
     """
-    gate = getattr(cfg, "token_gate", "balanced")
+    gate = getattr(cfg, "token_gate", "safety")
     if gate == "safety":
         return 0.0
     if gate == "balanced":

@@ -24,7 +24,7 @@ from ..schemas import (
 )
 from ..services import settings_service
 
-VERSION = "0.1.0"
+VERSION = f"BUILD {settings.app_build} — {settings.app_build_label}"
 
 events_router = APIRouter(prefix="/events", tags=["events"])
 alerts_router = APIRouter(prefix="/alerts", tags=["alerts"])

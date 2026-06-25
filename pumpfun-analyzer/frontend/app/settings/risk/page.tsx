@@ -22,7 +22,7 @@ const FIELDS: { key: string; label: string; type: "number" | "bool" | "text"; hi
   { key: "max_slippage", label: "Maksimum Slippage", type: "number", hint: "0.15 = %15. Fiyat bunu aşarsa işlem iptal (tepeden alımı önler)" },
   { key: "priority_fee_sol", label: "Priority Fee (SOL)", type: "number" },
   { key: "min_wallet_score", label: "Min. Cüzdan Puanı", type: "number" },
-  { key: "min_token_score", label: "Min. Token Puanı", type: "number" },
+  { key: "min_token_score", label: "Min. Token Puanı", type: "number", hint: "YALNIZCA İşlem Kapısı = 'score' modunda etkilidir (safety/balanced modda yok sayılır)" },
   { key: "max_open_positions_per_token", label: "Token Başına Maks. Pozisyon", type: "number" },
   { key: "max_follow_lag_seconds", label: "Maks. İzleme Gecikmesi (sn)", type: "number" },
   { key: "min_liquidity_sol", label: "Min. Likidite (SOL)", type: "number" },
@@ -101,6 +101,34 @@ export default function RiskSettings() {
             );
           })}
         </div>
+      </Section>
+
+      <Section title="İşlem Kapısı (token filtresi)">
+        <p className="text-xs muted mb-3">
+          Takipteki bir cüzdan token aldığında işlemin AÇILMASI için tokenin hangi
+          süzgeçten geçeceğini belirler. Taze pump.fun token'leri henüz adil puanlanamaz
+          (likidite/holder verisi yok); asıl sinyal <b>cüzdandır</b>.
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {[
+            { v: "safety", label: "Güvenlik (önerilen)", desc: "Yalnızca scam vetosu (rug/honeypot/aktif mint-freeze/sahte likidite) yoksa işlem aç. En çok işlem; cüzdana güven." },
+            { v: "balanced", label: "Dengeli", desc: "Güvenlik vetosu + token puanı ≥ 55. Taze token'lerin çoğu bu eşiği geçemez → az işlem." },
+            { v: "score", label: "Katı (score)", desc: "Güvenlik + 'Min. Token Puanı' eşiği. En seçici; çok az işlem." },
+          ].map((g) => {
+            const active = (form.token_gate || "safety") === g.v;
+            return (
+              <button key={g.v} className={active ? "card text-left" : "card card-hover text-left"}
+                style={active ? { borderColor: "#10b981", boxShadow: "0 0 0 1px #10b981" } : {}}
+                onClick={() => set("token_gate", g.v)}>
+                <div className="flex items-center gap-2 font-semibold">
+                  {active && <span style={{ color: "#10b981" }}>✓</span>} {g.label}
+                </div>
+                <div className="mt-1 text-xs muted">{g.desc}</div>
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-2 text-xs muted">Aktif kapı: <b>{form.token_gate || "safety"}</b> · değiştirdikten sonra <b>Kaydet</b>'e bas.</div>
       </Section>
 
       <div className="mt-4"><Callout kind="warn">

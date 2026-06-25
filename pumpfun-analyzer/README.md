@@ -198,12 +198,17 @@ filtresidir; çünkü kopya-ticarette asıl sinyal **cüzdandır** (akıllı par
 pump.fun token'leri doğası gereği düşük "kalite" puanı alır (likidite/holder
 verisi henüz oluşmamıştır), bu yüzden katı bir 70 eşiği neredeyse hiç işlem
 açtırmaz. Üç politika (Risk Ayarları'ndan seçilir):
-- **`balanced` (VARSAYILAN):** güvenlik vetosu (rug/honeypot/aktif mint-freeze)
-  yok **ve** token puanı ≥ 55. *İşlem açılır ama "her token"de değil* — çöp/tek-
-  holder bonding token'leri elenir, olgunlaşmış güvenli token'ler işlem açar.
-- **`safety`:** yalnızca güvenlik vetosu (puan eşiği yok). En çok işlem; cüzdana
-  tam güven. Daha agresif.
-- **`score`:** güvenlik + tam `min_token_score` (klasik katı; çok az işlem).
+- **`safety` (VARSAYILAN):** yalnızca güvenlik vetosu (rug/honeypot/aktif
+  mint-freeze/sahte likidite) yoksa işlem aç. Arbitrer bir puan eşiği YOK. Bu
+  "her token" değildir — scam token'leri yine elenir; gerisinde cüzdana güvenilir.
+  Saha verisi gösterdi ki taze pump.fun token'leri puan eşiklerini geçemiyor, bu
+  yüzden kopya-ticaret için doğru varsayılan budur.
+- **`balanced`:** güvenlik vetosu + token puanı ≥ 55. Daha seçici (taze token'lerin
+  çoğu geçemez → az işlem).
+- **`score`:** güvenlik + tam `min_token_score` eşiği (klasik katı; çok az işlem).
+
+> İşlem Kapısını **Risk Ayarları → İşlem Kapısı** bölümünden seçersin. Not:
+> `min_token_score` (Min. Token Puanı) YALNIZCA `score` modunda etkilidir.
 
 **Modlar:** `paper` (tam simülasyon, varsayılan AÇIK) · `alerts_only` · `live`.
 Canlı işlem yalnızca kullanıcı panelde riskleri onaylayıp (`live_confirmed`) ayrı
@@ -300,7 +305,7 @@ geçmişe sahip cüzdanlar girer. Daha fazla nitelikli cüzdan yüzeye çıkmas�
 >   gevşetmek kaliteyi düşürür.
 
 **"İşlem (trade) hiç olmuyor."** Üç katmanlı güvence var: (a) **PAPER motoru
-varsayılan AÇIK** (risksiz), (b) işlem kapısı **`balanced`**, (c) **poll izleyici**
+varsayılan AÇIK** (risksiz), (b) işlem kapısı **`safety`** (scam vetosu), (c) **poll izleyici**
 — canlı WS dinleyicisi (`logsSubscribe`) olay KAÇIRABİLDİĞİNDEN, takip edilen
 cüzdanların taze alımları ayrıca her ~45 sn'de Enhanced poll ile GÜVENİLİR biçimde
 yakalanır (`TRACKED_POLL_SECONDS`). Yani takipteki bir cüzdan güvenli + makul (≥55)

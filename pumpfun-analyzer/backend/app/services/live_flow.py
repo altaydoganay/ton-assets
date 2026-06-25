@@ -65,7 +65,7 @@ def _risk_config(db: Session) -> RiskConfig:
         priority_fee_sol=float(r.get("priority_fee_sol", 0.0005)),
         min_wallet_score=float(r.get("min_wallet_score", thresholds.get("wallet", 70.0))),
         min_token_score=float(r.get("min_token_score", thresholds.get("token", 70.0))),
-        token_gate=str(r.get("token_gate", "balanced")),
+        token_gate=str(r.get("token_gate", "safety")),
         max_open_positions_per_token=int(r.get("max_open_positions_per_token", 1)),
         max_follow_lag_seconds=int(r.get("max_follow_lag_seconds", 60)),
         min_liquidity_sol=float(r.get("min_liquidity_sol", 5.0)),
@@ -136,9 +136,11 @@ def handle_trade_event(
     token_threshold = get_setting(db, "thresholds").get("token", 70.0)
     # İşlem kapısı politikası: cüzdan alpha; token bir GÜVENLİK filtresidir.
     #   safety   → veto yoksa geç (taze bonding token'lerin düşük puanı engel değil)
-    #   balanced → veto yok + puan ≥ 55  (VARSAYILAN: işlem açılır ama her token'de değil)
+    #   balanced → veto yok + puan ≥ 55
     #   score    → veto yok + puan ≥ eşik (klasik katı)
-    token_gate = get_setting(db, "risk").get("token_gate", "balanced")
+    # VARSAYILAN safety: taze token'ler adil puanlanamadığından kalite eşiği değil
+    # GÜVENLİK vetosu uygulanır; asıl sinyal cüzdandır.
+    token_gate = get_setting(db, "risk").get("token_gate", "safety")
     if token_gate == "score":
         token_ok = (not assessment.vetoed) and assessment.total >= token_threshold
     elif token_gate == "balanced":

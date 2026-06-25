@@ -74,6 +74,9 @@ def setup_status(db: Session) -> dict:
         "trading_mode": risk.get("mode", "paper"),
         "engine_enabled": bool(risk.get("enabled")),
         "live_confirmed": bool(risk.get("live_confirmed")),
+        "token_gate": risk.get("token_gate", "balanced"),
+        "build": settings.app_build,
+        "build_label": settings.app_build_label,
         "discovery_enabled": settings.discovery_enabled,
         "discovery_max_lookups_per_min": settings.discovery_max_lookups_per_min,
     }

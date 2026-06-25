@@ -22,10 +22,13 @@ DEFAULTS: dict[str, dict] = {
         "enabled": True,
         "mode": "paper",
         "live_confirmed": False,
-        # İşlem kapısı: token bir GÜVENLİK filtresidir. "balanced" = güvenlik
-        # vetosu + düşük kalite tabanı (≥55): işlem açılır ama "her token"de değil.
-        # "safety" | "balanced" | "score" (bkz. trading/risk.py).
-        "token_gate": "balanced",
+        # İşlem kapısı: token bir GÜVENLİK filtresidir, kalite notu DEĞİL — taze
+        # pump.fun token'leri (likidite/holder verisi henüz yok) adil puanlanamaz;
+        # asıl sinyal CÜZDANDIR. "safety" = güvenlik vetosu (rug/honeypot/aktif
+        # mint-freeze/sahte likidite) yoksa işlem açılır; arbitrer bir puan eşiği
+        # DAYATILMAZ. Bu "her token" değildir — scam token'leri yine elenir.
+        # "safety" | "balanced" (+≥55) | "score" (+tam eşik). Bkz. trading/risk.py.
+        "token_gate": "safety",
         "fixed_sol_amount": 0.05,
         "proportional": False,
         "proportional_factor": 1.0,
@@ -87,13 +90,15 @@ def seed_defaults(db: Session) -> None:
         elig.value = DEFAULTS["wallet_eligibility"]
         db.commit()
 
-    # Tek seferlik risk politikası yükseltmesi (v4): DENGELİ işlem kapısı (güvenlik
-    # vetosu + token ≥55) + paper motorunu aç + dengeli TP/SL. Yalnızca BİR KEZ
-    # uygulanır (işaret konur), böylece sonradan paneldeki kullanıcı tercihleri
-    # ezilmez. CANLI işleme (live_confirmed) ASLA dokunulmaz.
-    if not db.query(Setting).filter(Setting.key == "_meta_risk_policy_v4").first():
+    # Tek seferlik risk politikası yükseltmesi (v5): GÜVENLİK (safety) işlem kapısı.
+    # Saha verisi gösterdi ki "balanced" (≥55) eşiği, takip cüzdanlarının aldığı
+    # TAZE token'leri (henüz likidite/holder verisi yok) geçiremiyor → 0 işlem.
+    # safety = scam vetosu yoksa işlem aç (cüzdan = alpha). Paper motoru açık.
+    # Yalnızca BİR KEZ uygulanır; sonradan paneldeki tercih ezilmez, CANLI'ya
+    # (live_confirmed) dokunulmaz.
+    if not db.query(Setting).filter(Setting.key == "_meta_risk_policy_v5").first():
         risk = get_setting(db, "risk")
-        risk["token_gate"] = "balanced"
+        risk["token_gate"] = "safety"
         if not risk.get("live_confirmed"):
             risk["enabled"] = True
             risk["mode"] = "paper"
@@ -104,7 +109,7 @@ def seed_defaults(db: Session) -> None:
         if risk.get("max_daily_spend_sol", 0) > 1.0:
             risk["max_daily_spend_sol"] = 1.0
         set_setting(db, "risk", risk)
-        set_setting(db, "_meta_risk_policy_v4", {"applied": True})
+        set_setting(db, "_meta_risk_policy_v5", {"applied": True})
 
 
 def all_settings(db: Session) -> dict[str, dict]:

@@ -16,6 +16,19 @@ export function ListenerStatus() {
       <span className="muted">Dinleyici: {ok ? "bağlı" : "kapalı"}</span>
       <span className="muted">·</span>
       <span className="muted">Mod: {data.trading_mode === "live" ? "Canlı" : data.trading_mode === "paper" ? "Paper" : data.trading_mode}</span>
+      {data.token_gate && (<><span className="muted">·</span><span className="muted">Kapı: {data.token_gate}</span></>)}
+      {data.build && (
+        <>
+          <span className="muted">·</span>
+          <span
+            className="rounded px-1.5 py-0.5 font-semibold"
+            style={{ background: "#10b98122", color: "#10b981" }}
+            title={data.build_label || ""}
+          >
+            BUILD {data.build}
+          </span>
+        </>
+      )}
     </div>
   );
 }
