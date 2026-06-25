@@ -73,6 +73,22 @@ def analyze_discovered() -> dict:
         db.close()
 
 
+@celery_app.task(name="app.workers.tasks.reevaluate_analyzed")
+def reevaluate_analyzed() -> dict:
+    """Analiz edilmiş umut vadeden cüzdanları güncel kriterlerle yeniden
+    değerlendir (kayıtlı swap'lardan, Helius'suz). Uygun olanları takibe taşır."""
+    from ..services.discovery import reevaluate_analyzed as _re
+
+    db = SessionLocal()
+    try:
+        result = _re(db)
+        logger.info("[REEVAL] reevaluated=%d promoted=%d",
+                    result.get("reevaluated", 0), result.get("promoted", 0))
+        return result
+    finally:
+        db.close()
+
+
 @celery_app.task(name="app.workers.tasks.manage_positions")
 def manage_positions() -> dict:
     """Açık paper pozisyonlarında TP/SL kontrolü."""

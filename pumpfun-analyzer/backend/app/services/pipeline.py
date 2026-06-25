@@ -80,8 +80,11 @@ def analyze_wallet(
     leader_trades: list[TradeRef] | None = None,
     token_birth_times: dict[str, int] | None = None,
     extra_signals: dict | None = None,
+    persist: bool = True,
 ):
-    """Kayıtlı swap'lara göre cüzdanı puanlar ve sonucu saklar."""
+    """Kayıtlı swap'lara göre cüzdanı puanlar. persist=False ise sonucu sadece
+    döner (veritabanına yazmaz) — kriter değişiminde toplu yeniden değerlendirme
+    için gereksiz kayıt tutmamak adına."""
     swaps = (
         db.query(Swap)
         .filter(Swap.wallet_address == address)
@@ -160,7 +163,8 @@ def analyze_wallet(
         "median_hold_seconds": perf.median_hold_seconds,
         "history_days": history_days,
     }
-    persist_wallet_score(db, wallet, result, metrics=metrics)
+    if persist:
+        persist_wallet_score(db, wallet, result, metrics=metrics)
     return result
 
 

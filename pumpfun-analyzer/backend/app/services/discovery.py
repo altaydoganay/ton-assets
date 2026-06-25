@@ -56,6 +56,32 @@ def pending_candidates(db: Session, limit: int) -> list[Wallet]:
     )
 
 
+def reevaluate_analyzed(db: Session, min_score: float = 60.0, limit: int = 400) -> dict:
+    """Zaten analiz edilmiş umut vadeden cüzdanları GÜNCEL kriterlerle yeniden
+    değerlendirir. KAYITLI swap'lardan hesaplar — Helius'a GİTMEZ (bedava).
+    Kriter/eşik değiştiğinde uygun olanları otomatik 'Takipte'ye taşır.
+    """
+    rows = (
+        db.query(Wallet)
+        .filter(
+            Wallet.status.in_([WalletStatus.analyzed.value, WalletStatus.below_threshold.value]),
+            Wallet.latest_score.isnot(None),
+            Wallet.latest_score >= min_score,
+        )
+        .order_by(Wallet.latest_score.desc())
+        .limit(limit)
+        .all()
+    )
+    promoted = 0
+    for w in rows:
+        # Önce yazmadan değerlendir; yalnızca takibe girecekse kalıcılaştır (bloat yok)
+        res = analyze_wallet(db, w.address, persist=False)
+        if res.tracked:
+            analyze_wallet(db, w.address, persist=True)
+            promoted += 1
+    return {"reevaluated": len(rows), "promoted": promoted}
+
+
 def analyze_discovered_batch(
     db: Session, chain: ChainProvider, limit: int = 5, ingest_limit: int = 80
 ) -> list[dict]:

@@ -31,6 +31,8 @@ celery_app.conf.update(
         "reanalyze-tracked": {"task": "app.workers.tasks.reanalyze_tracked", "schedule": 900.0},
         # Açık paper pozisyonlarında take-profit / stop-loss kontrolü
         "manage-positions": {"task": "app.workers.tasks.manage_positions", "schedule": 60.0},
+        # Analiz edilmiş umut vadeden cüzdanları güncel kriterlerle yeniden değerlendir
+        "reevaluate-analyzed": {"task": "app.workers.tasks.reevaluate_analyzed", "schedule": 300.0},
     },
 )
 

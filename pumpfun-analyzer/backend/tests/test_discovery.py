@@ -6,7 +6,9 @@ from app.services.discovery import (
     record_candidate,
     pending_candidates,
     analyze_discovered_batch,
+    reevaluate_analyzed,
 )
+from app.services.settings_service import seed_defaults
 
 
 class EmptyProvider(ChainProvider):
@@ -38,15 +40,16 @@ def _seed_good_swaps(db, addr):
     """12 token, 24 kapalı kârlı pozisyon, ~55 günlük geçmiş."""
     base = datetime.now(timezone.utc) - timedelta(days=60)
     i = 0
+    pfx = addr[:8]  # imzaları cüzdana özel yap (test izolasyonu)
     for tok in range(12):
         mint = f"DiscMint{tok}"
         for _ in range(2):
             t_buy = base + timedelta(days=i * 2.2)
             t_sell = t_buy + timedelta(hours=1)
-            db.add(Swap(signature=f"d-buy-{tok}-{i}", wallet_address=addr, token_mint=mint,
+            db.add(Swap(signature=f"{pfx}-buy-{tok}-{i}", wallet_address=addr, token_mint=mint,
                         side="buy", sol_amount=1.0, token_amount=100, price_sol=0.01,
                         fee_sol=0.01, venue="pumpfun", block_time=t_buy, confirmation="finalized"))
-            db.add(Swap(signature=f"d-sell-{tok}-{i}", wallet_address=addr, token_mint=mint,
+            db.add(Swap(signature=f"{pfx}-sell-{tok}-{i}", wallet_address=addr, token_mint=mint,
                         side="sell", sol_amount=1.4, token_amount=100, price_sol=0.014,
                         fee_sol=0.01, venue="pumpfun", block_time=t_sell, confirmation="finalized"))
             i += 1
@@ -63,6 +66,20 @@ def test_batch_promotes_quality_wallet_to_tracked(db):
     w = db.query(Wallet).filter(Wallet.address == addr).first()
     assert w.status == WalletStatus.tracked.value
     assert w.latest_score >= 70
+
+
+def test_reevaluate_promotes_eligible_analyzed_wallet(db):
+    seed_defaults(db)  # güncel (gevşetilmiş) kriterleri DB'ye senkronlar
+    addr = "AnalyzedButEligible1111111111111111111111111"
+    # önceden 'analyzed' kalmış, puanı yüksek bir cüzdan + kayıtlı iyi swap'lar
+    w = Wallet(address=addr, status=WalletStatus.analyzed.value, latest_score=73.0)
+    db.add(w)
+    db.commit()
+    _seed_good_swaps(db, addr)
+    res = reevaluate_analyzed(db, min_score=60, limit=50)
+    assert res["promoted"] >= 1
+    db.refresh(w)
+    assert w.status == WalletStatus.tracked.value
 
 
 def test_batch_marks_empty_wallet_analyzed(db):
