@@ -35,8 +35,11 @@ class Settings(BaseSettings):
     celery_result_backend: str = "redis://localhost:6379/2"
 
     # --- Veri sağlayıcıları (adapter seçimi) ---
-    # Birincil zincir verisi sağlayıcısı: "rpc" | "helius"
-    chain_provider: str = "rpc"
+    # Birincil zincir verisi sağlayıcısı: "helius" | "rpc"
+    # Varsayılan "helius": HELIUS_API_KEY varsa Enhanced Transactions ile derin +
+    # ucuz alım (cüzdan başına ~100 RPC çağrısı yerine TEK istek) kullanılır.
+    # Anahtar yoksa otomatik olarak standart RPC'ye düşülür (registry'de ele alınır).
+    chain_provider: str = "helius"
     # Fiyat/piyasa verisi sağlayıcısı: "birdeye" | "dexscreener"
     market_provider: str = "dexscreener"
 
@@ -90,22 +93,26 @@ class Settings(BaseSettings):
     # Canlı akıştan (yeni token -> o tokenin alıcıları) aday cüzdan toplama.
     discovery_enabled: bool = True
     # Bir cüzdanın aday sayılması için kaç FARKLI token alımında görülmesi gerek.
-    # Helius ücretsiz planında örnekleme seyrek olduğundan varsayılan 1; aynı
-    # cüzdanı iki kez yakalamak zor olur. Kaliteyi puanlama+eleme belirler.
-    discovery_min_token_hits: int = 1
+    # 2 = ÜCRETSİZ ön filtre: tek bir tokeni alıp kaybolan snipe/bot'lar yerine
+    # birden çok farklı tokende görülen (tutarlılık sinyali) cüzdanları aday yapar.
+    # Böylece kredi yalnızca daha umut vadeden cüzdanların analizine harcanır.
+    discovery_min_token_hits: int = 2
     # Aynı anda izlenen (trade aboneliği açık) maksimum token sayısı
     discovery_max_watched_tokens: int = 120
-    # Her arka plan döngüsünde analiz edilecek aday sayısı. Helius getTransaction
-    # kredi maliyeti yüksek olabildiğinden DÜŞÜK tutuldu (10M/ay kotasını koru).
-    discovery_batch_size: int = 2
-    # Aday analizinde taranacak işlem sayısı (derinlik). 50 ≈ "10 kapalı pozisyon"
-    # kriterini karşılamaya yeter; daha derin = daha çok kredi.
-    discovery_ingest_limit: int = 50
+    # Her arka plan döngüsünde analiz edilecek aday sayısı.
+    discovery_batch_size: int = 3
+    # Aday analizinde taranacak işlem sayısı (DERİNLİK). Helius Enhanced
+    # Transactions ile 100'er işlem TEK istekte gelir; bu yüzden derin geçmiş
+    # (150) ucuzdur ve "8 kapalı pozisyon / 4 farklı token" eleme kriterlerinin
+    # gerçek trader'larca karşılanabilmesi için derinlik şarttır. RPC fallback'te
+    # bu değer imza-başına çağrı demektir (Helius dışı sağlayıcıda küçült).
+    discovery_ingest_limit: int = 150
     # Aday analiz döngüsü aralığı (saniye) — Celery beat
-    discovery_interval_seconds: int = 120
+    discovery_interval_seconds: int = 180
     # Helius keşfinde dakikada en fazla kaç işlem detayı çekilsin. Büyük backlog
     # varken düşük tut (yeni keşfe değil, mevcut havuzu analize odaklan).
-    discovery_max_lookups_per_min: int = 15
+    # Bu, keşif `getTransaction` kredisinin ana kalemidir; bütçeye göre ayarla.
+    discovery_max_lookups_per_min: int = 6
 
     # --- Eşikler (varsayılan; veritabanındaki settings tablosu önceliklidir) ---
     min_wallet_score: float = 70.0

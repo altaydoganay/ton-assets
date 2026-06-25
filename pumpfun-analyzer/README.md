@@ -142,8 +142,15 @@ sağlayıcının kullanılacağı `.env` ve panelden (API/RPC Ayarları sayfası
 belirlenir. Yeni bir sağlayıcı eklemek için `ChainProvider` / `MarketProvider`
 arayüzünü uygulamak yeterlidir.
 
-- **Zincir verisi:** `SolanaRpcAdapter` (failover'lı, birden çok endpoint sırayla
-  denenir) veya `HeliusAdapter` (enhanced transactions).
+- **Zincir verisi:** `HeliusAdapter` (ÖNERİLEN) veya `SolanaRpcAdapter`
+  (failover'lı, birden çok endpoint sırayla denenir).
+  - **Helius Enhanced Transactions (kredi kritik):** Cüzdan analizinde,
+    imza-başına ayrı `getTransaction` yerine **Enhanced Transactions History**
+    (`/v0/addresses/{adres}/transactions`) kullanılır — **tek HTTP isteğinde 100
+    parse edilmiş işlem**. Bu sayede cüzdan başına ~100 RPC çağrısı **tek isteğe**
+    iner (≈10× daha az kredi) ve daha **derin** geçmiş alınır; "8 kapalı pozisyon /
+    4 farklı token" gibi eleme kriterleri gerçek trader'larca karşılanabilir hale
+    gelir. `HELIUS_API_KEY` yoksa otomatik olarak standart RPC'ye düşülür.
 - **Piyasa verisi:** `DexScreenerAdapter` (anahtarsız) veya `BirdeyeAdapter`.
 
 **Pump.fun / PumpSwap:** Arayüz **scrape edilmez**. Öncelik zincir üstü veri ve
@@ -225,8 +232,10 @@ Uçtan uca akış (PumpPortal canlı veri + Helius zincir verisi ile):
    *Keşfedilen Cüzdanlar* listesine `discovered` olarak otomatik eklenir. Ücretsiz
    Helius kotasını korumak için keşif sorguları `DISCOVERY_MAX_LOOKUPS_PER_MIN` ile
    sınırlıdır. (Eski PumpPortal akışı her olay için SOL ücreti kestiğinden artık
-   yalnızca canlı al-sat için kullanılır; `LISTENER_PROVIDER=helius` varsayılandır.) Celery beat bunları parti parti (varsayılan 2 dakikada
-   bir, `DISCOVERY_BATCH_SIZE` adet) Helius ile analiz edip puanlar; puan ≥ 70 ve
+   yalnızca canlı al-sat için kullanılır; `LISTENER_PROVIDER=helius` varsayılandır.)
+   Celery beat bunları parti parti (`DISCOVERY_INTERVAL_SECONDS`, varsayılan 3
+   dakikada bir, `DISCOVERY_BATCH_SIZE` adet) Helius **Enhanced Transactions** ile
+   DERİN (varsayılan 150 işlem) ve UCUZ analiz edip puanlar; puan ≥ 70 ve
    tüm kalite/eleme kriterlerini geçenler otomatik **takip listesine** alınır.
    İstersen *Keşfedilen Cüzdanlar* sayfasından **elle de** adres ekleyebilirsin
    (`POST /api/wallets`). Otomatik keşif `DISCOVERY_ENABLED=false` ile kapatılır.
@@ -259,6 +268,35 @@ edilir; **acil durdurma** her an yeni işlemleri durdurur.
 > likiditesi + ilk-N holder yoğunluğu). Tam holder de-etiketleme (LP/sistem
 > ayrımı, insider/sniper arzı) düşük güven (confidence) ile işaretlenir ve
 > ileride genişletilebilir — eksik veri kesin bilgi gibi sunulmaz.
+
+### Sık karşılaşılan durumlar (SSS)
+
+**"Çok cüzdan keşfedildi ama takip edilen çok az / hiç işlem yok."** Bu
+genelde **normaldir ve tasarımın bir parçasıdır** — keşif "kim alım yapıyor"
+sinyalini üretir; pump.fun'da bu havuz büyük oranda snipe/bot'tur ve kalite
+filtreleri (puan ≥ 70 + eleme + veto + **veri yeterliliği/confidence**) bunları
+doğru biçimde eler. Takip listesine yalnızca **tutarlı, çok-tokenli, organik**
+geçmişe sahip cüzdanlar girer. Daha fazla nitelikli cüzdan yüzeye çıkması için:
+> - `CHAIN_PROVIDER=helius` ve `HELIUS_API_KEY` ayarlı olsun — Enhanced
+>   Transactions ile **derin** geçmiş alınır (sığ 50-işlem penceresi gerçek
+>   trader'ların "8 kapalı pozisyon / 4 token" kriterini karşılayamaz).
+> - Bütçen varsa `DISCOVERY_BATCH_SIZE` ve `DISCOVERY_INTERVAL_SECONDS` ile
+>   analiz hızını artır (backlog daha hızlı erir).
+> - Eşik/eleme/ağırlıklar panelden (API & Eşik Ayarları) gevşetilebilir; ama
+>   gevşetmek kaliteyi düşürür.
+
+**"İşlem (trade) hiç olmuyor."** Otomatik kopya işlem **varsayılan KAPALIDIR**
+(güvenlik). Bir takipteki cüzdan bir takipteki tokeni aldığında her zaman
+**Telegram bildirimi** gönderilir; ama **paper/canlı işlem** için Risk Ayarları
+sayfasında **İşlem Motoru = Açık** ve **Mod = paper** (risksiz simülasyon) seçilmeli.
+Ayrıca işlem ancak hem cüzdan **hem de** token ≥ 70 olduğunda tetiklenir; takip
+havuzu küçükken eşleşme nadirdir (yukarıdaki maddelerle havuzu büyütün).
+
+**"Kredi çok hızlı tükeniyor."** En büyük kalemler: (1) keşif `getTransaction`
+sorguları → `DISCOVERY_MAX_LOOKUPS_PER_MIN` ile sınırla; (2) aday analizi →
+`CHAIN_PROVIDER=helius` (Enhanced Transactions) ile imza-başına çağrı yerine tek
+istek kullan, `DISCOVERY_BATCH_SIZE`/`DISCOVERY_INTERVAL_SECONDS` ile hızı bütçene
+göre ayarla.
 
 ## Puanlama formülleri
 

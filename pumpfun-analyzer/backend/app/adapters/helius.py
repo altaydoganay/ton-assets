@@ -31,3 +31,38 @@ class HeliusAdapter(SolanaRpcAdapter):
             resp = client.post(url, json={"transactions": signatures})
             resp.raise_for_status()
             return resp.json()
+
+    def get_address_transactions(
+        self,
+        address: str,
+        limit: int = 100,
+        before: str | None = None,
+        until: str | None = None,
+        tx_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Bir adresin parse edilmiş işlem GEÇMİŞİ — TEK istekte 100 işleme kadar.
+
+        KREDİ KRİTİK: 100 ayrı `getTransaction` çağrısı yerine bu endpoint tek HTTP
+        isteğiyle 100 parse edilmiş işlem döner (≈100× daha az kredi). Cüzdan
+        analizinde derin ve eksiksiz geçmiş bu sayede ucuza elde edilir.
+
+        En yeniden eskiye sıralı döner; sayfalama için `before=<son imza>` ver.
+        """
+        import httpx
+
+        url = f"{self._enhanced_base}/addresses/{address}/transactions"
+        params: dict[str, Any] = {
+            "api-key": self.api_key,
+            "limit": max(1, min(int(limit), 100)),
+        }
+        if before:
+            params["before"] = before
+        if until:
+            params["until"] = until
+        if tx_type:
+            params["type"] = tx_type
+        with httpx.Client(timeout=25) as client:
+            resp = client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            return data if isinstance(data, list) else []

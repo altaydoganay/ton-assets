@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from ..adapters.base import ChainProvider
-from ..adapters.pumpfun import normalize_rpc_transaction
+from ..adapters.pumpfun import normalize_enhanced_transaction, normalize_rpc_transaction
 from ..core.analysis.pnl import SwapEvent, compute_performance
 from ..core.analysis.swap_detection import NormalizedTx, detect_swap
 from ..core.classification.copy_trader import TradeRef, detect_copy_trader
@@ -55,7 +55,54 @@ def store_swap(db: Session, swap) -> Swap | None:
 
 
 def ingest_wallet(db: Session, provider: ChainProvider, address: str, limit: int = 200) -> int:
-    """Cüzdanın işlemlerini çekip swap'ları kaydeder. Kaydedilen swap sayısını döner."""
+    """Cüzdanın işlemlerini çekip swap'ları kaydeder. Kaydedilen swap sayısını döner.
+
+    Sağlayıcı Helius Enhanced Transactions destekliyorsa (tek istekte 100 parse
+    edilmiş işlem) o yol kullanılır — derin geçmiş + ~100× daha az kredi. Aksi
+    halde imza-başına `getTransaction` yoluna düşülür (RPC).
+    """
+    if hasattr(provider, "get_address_transactions"):
+        return _ingest_wallet_enhanced(db, provider, address, limit)
+    return _ingest_wallet_rpc(db, provider, address, limit)
+
+
+def _ingest_wallet_enhanced(db: Session, provider, address: str, limit: int) -> int:
+    """Helius Enhanced Transactions History ile derin, ucuz alım.
+
+    En yeniden eskiye sayfalanır (`before=<son imza>`). 100'er işlemlik tek
+    isteklerle `limit` işleme kadar taranır.
+    """
+    count = 0
+    fetched = 0
+    before: str | None = None
+    while fetched < limit:
+        page_size = min(100, limit - fetched)
+        try:
+            page = provider.get_address_transactions(address, limit=page_size, before=before)
+        except Exception:  # noqa: BLE001 — enhanced erişilemezse RPC'ye düş
+            if fetched == 0:
+                return _ingest_wallet_rpc(db, provider, address, limit)
+            break
+        if not page:
+            break
+        for enh in page:
+            ntx = normalize_enhanced_transaction(enh)
+            if ntx is None:
+                continue
+            swap = detect_swap(ntx, address)
+            if swap is not None:
+                store_swap(db, swap)
+                count += 1
+        fetched += len(page)
+        last_sig = page[-1].get("signature") if isinstance(page[-1], dict) else None
+        if not last_sig or len(page) < page_size:
+            break
+        before = last_sig
+    return count
+
+
+def _ingest_wallet_rpc(db: Session, provider: ChainProvider, address: str, limit: int) -> int:
+    """İmza-başına getTransaction yolu (Helius dışı RPC sağlayıcılar için)."""
     sigs = provider.get_signatures_for_address(address, limit=limit)
     count = 0
     for s in sigs:

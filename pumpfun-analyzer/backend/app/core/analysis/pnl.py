@@ -219,7 +219,14 @@ def _consistency(amounts: list[float]) -> float:
 
 
 def _confidence(perf: WalletPerformance) -> float:
-    """Veri yeterliliği güveni: örneklem büyüklüğü ve çeşitliliğe dayalı 0-1."""
-    pos = min(1.0, perf.closed_positions / 30.0)
-    div = min(1.0, perf.token_diversity / 15.0)
+    """Veri yeterliliği güveni: örneklem büyüklüğü ve çeşitliliğe dayalı 0-1.
+
+    "Tam güven" referansı GERÇEKÇİ bir aktif trader örneklemine hizalanır:
+    ~20 kapalı pozisyon ve ~10 farklı token. Böylece eleme kriterlerini (8/4)
+    rahatça aşan kaliteli bir cüzdanın yüksek ham puanı, düşük güven yüzünden 70
+    altına EZİLMEZ; ama az veri (eleme minimumu) hâlâ temkinli (≈0.4) kalır —
+    yani ince örnekleme yüksek puan verilmez (veri yeterliliği ilkesi korunur).
+    """
+    pos = min(1.0, perf.closed_positions / 20.0)
+    div = min(1.0, perf.token_diversity / 10.0)
     return round(0.6 * pos + 0.4 * div, 3)
