@@ -1,15 +1,25 @@
 "use client";
 import useSWR from "swr";
 import Link from "next/link";
-import { fetcher } from "@/lib/api";
+import { fetcher, apiSend } from "@/lib/api";
 import { PageHeader } from "@/components/Confidence";
 import { Section, Callout } from "@/components/ui";
+import { useToast } from "@/components/Toast";
 import { CheckCircle2, XCircle, ArrowRight } from "lucide-react";
 import { Loading } from "@/components/States";
 
 export default function Setup() {
-  const { data } = useSWR<any>("/setup", fetcher, { refreshInterval: 15000 });
+  const { data, mutate } = useSWR<any>("/setup", fetcher, { refreshInterval: 15000 });
+  const toast = useToast();
   if (!data) return <Loading />;
+
+  async function toggleDiscovery(enabled: boolean) {
+    try {
+      await apiSend(`/setup/discovery?enabled=${enabled}`, "POST");
+      await mutate();
+      toast("success", enabled ? "Keşif açıldı" : "Keşif kapatıldı — kredi korunuyor");
+    } catch (e: any) { toast("error", e?.message || "İşlem başarısız"); }
+  }
 
   const fixes: Record<string, { label: string; href: string }> = {
     helius: { label: "API ve RPC Ayarları", href: "/settings/api" },
@@ -57,6 +67,27 @@ export default function Setup() {
         <InfoCard label="İşlem Motoru" value={data.engine_enabled ? "Açık" : "Kapalı"} />
         <InfoCard label="Keşif Hızı" value={`${data.discovery_max_lookups_per_min}/dk`} hint={data.discovery_enabled ? "Keşif açık" : "Keşif kapalı"} />
       </div>
+
+      <Section title="Keşif Akışı (Helius kredi kontrolü)">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm">
+            <div className="font-medium">
+              Keşif (pump.fun canlı akışı): {data.discovery_enabled ? "🟢 Açık" : "⚪ Kapalı"}
+            </div>
+            <div className="muted text-xs mt-1 max-w-2xl">
+              Keşif, yeni cüzdan bulmak için pump.fun'ın <b>tüm canlı akışına</b> abone olur. Helius bunu
+              <b> MB başına ücretlendirir</b> — kredinin EN BÜYÜK kalemidir. Yeterince aday (backlog) bulduysan
+              <b> kapat</b>: kredi düşer, analiz mevcut adaylar üzerinde devam eder, işlemler (poll izleyici) çalışmaya devam eder.
+            </div>
+          </div>
+          <button
+            className={data.discovery_enabled ? "btn-danger whitespace-nowrap" : "btn-primary whitespace-nowrap"}
+            onClick={() => toggleDiscovery(!data.discovery_enabled)}
+          >
+            {data.discovery_enabled ? "Keşfi Kapat (kredi koru)" : "Keşfi Aç"}
+          </button>
+        </div>
+      </Section>
 
       <div className="mt-4">
         <Callout kind="warn">

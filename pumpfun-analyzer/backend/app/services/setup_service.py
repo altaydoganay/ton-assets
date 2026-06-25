@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..models import Wallet
-from .settings_service import get_heartbeat, get_setting
+from .settings_service import get_heartbeat, get_runtime_flag, get_setting
 
 
 def _age_seconds(iso: str | None) -> float | None:
@@ -77,6 +77,6 @@ def setup_status(db: Session) -> dict:
         "token_gate": risk.get("token_gate", "balanced"),
         "build": settings.app_build,
         "build_label": settings.app_build_label,
-        "discovery_enabled": settings.discovery_enabled,
+        "discovery_enabled": get_runtime_flag(db, "discovery_enabled", settings.discovery_enabled),
         "discovery_max_lookups_per_min": settings.discovery_max_lookups_per_min,
     }

@@ -60,6 +60,21 @@ def _tracked_addresses() -> list[str]:
         db.close()
 
 
+def _discovery_on() -> bool:
+    """Keşif akışı (pump.fun firehose) açık mı — panelden (DB) kontrol edilebilir.
+    Kapalıyken WS firehose'a abone OLMAYIZ; bu, Helius streaming kredisinin (MB
+    başına) ana kalemini durdurur. 14k+ aday backlog'u varken bunu kapatmak
+    krediyi büyük ölçüde düşürür; analiz mevcut backlog üzerinde devam eder."""
+    db = SessionLocal()
+    try:
+        from ..services.settings_service import get_runtime_flag
+        return get_runtime_flag(db, "discovery_enabled", settings.discovery_enabled)
+    except Exception:  # noqa: BLE001
+        return settings.discovery_enabled
+    finally:
+        db.close()
+
+
 class _RateLimiter:
     """Dakikalık kayan pencere sayacı."""
     def __init__(self, per_min: int):
@@ -121,11 +136,24 @@ class HeliusListener:
                 # ASCII etiketli durum logu (Windows findstr ile aranabilir)
                 logger.info("[DISCOVERY] lookups=%d candidates=%d tracked_subs=%d",
                             self.stat_lookups, self.stat_candidates, len(self.subscribed_accounts))
-                if settings.discovery_enabled and not self.discovery_sub_active:
+                want_discovery = await asyncio.to_thread(_discovery_on)
+                if want_discovery and not self.discovery_sub_active:
                     await self._subscribe_logs(ws, PUMP_FUN_PROGRAM, "discovery", None)
                     self.discovery_sub_active = True
                     # Mezun olmuş (PumpSwap) token alıcıları da kaliteli sinyaldir
                     await self._subscribe_logs(ws, PUMP_SWAP_PROGRAM, "discovery", None)
+                    logger.info("[LISTENER] keşif akışı AÇIK (pump.fun firehose)")
+                elif not want_discovery and self.discovery_sub_active:
+                    # Firehose'u DURDUR: discovery aboneliklerini iptal et (kredi koruması)
+                    for sid in [s for s, (k, _w) in self.sub_meta.items() if k == "discovery"]:
+                        try:
+                            await ws.send(json.dumps({"jsonrpc": "2.0", "id": self._next_id(),
+                                                      "method": "logsUnsubscribe", "params": [sid]}))
+                        except Exception:  # noqa: BLE001
+                            pass
+                        self.sub_meta.pop(sid, None)
+                    self.discovery_sub_active = False
+                    logger.info("[LISTENER] keşif akışı KAPALI (firehose durduruldu — kredi koruması)")
                 current = set(_tracked_addresses())
                 for addr in current - self.subscribed_accounts:
                     await self._subscribe_logs(ws, addr, "tracked", addr)

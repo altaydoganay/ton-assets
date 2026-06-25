@@ -65,6 +65,23 @@ def get_setting(db: Session, key: str) -> dict:
     return dict(DEFAULTS.get(key, {}))
 
 
+def get_runtime_flag(db: Session, name: str, default: bool) -> bool:
+    """Panelden açılıp kapatılabilen çalışma-zamanı bayrağı (DB). Kayıt yoksa
+    `default` (genelde .env değeri) döner. Örn. keşif akışını (firehose) canlıyken
+    durdurmak için — yeniden derlemeye gerek kalmadan."""
+    row = db.query(Setting).filter(Setting.key == "runtime").first()
+    if row and isinstance(row.value, dict) and name in row.value:
+        return bool(row.value[name])
+    return default
+
+
+def set_runtime_flag(db: Session, name: str, value: bool) -> dict:
+    row = db.query(Setting).filter(Setting.key == "runtime").first()
+    val = dict(row.value) if row and isinstance(row.value, dict) else {}
+    val[name] = bool(value)
+    return set_setting(db, "runtime", val)
+
+
 def set_setting(db: Session, key: str, value: dict) -> dict:
     row = db.query(Setting).filter(Setting.key == key).first()
     if row:

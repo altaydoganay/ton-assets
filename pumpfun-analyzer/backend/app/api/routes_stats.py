@@ -13,7 +13,7 @@ from ..database import get_db
 from ..models import AuditLog, PaperTrade, Token, Wallet
 from ..services import stats_service
 from ..services.setup_service import setup_status
-from ..services.settings_service import RISK_PROFILES, apply_risk_profile
+from ..services.settings_service import RISK_PROFILES, apply_risk_profile, set_runtime_flag
 
 stats_router = APIRouter(prefix="/stats", tags=["stats"])
 setup_router = APIRouter(prefix="/setup", tags=["setup"])
@@ -49,6 +49,15 @@ def positions(db: Session = Depends(get_db)):
 @setup_router.get("")
 def setup(db: Session = Depends(get_db)):
     return setup_status(db)
+
+
+@setup_router.post("/discovery")
+def toggle_discovery(enabled: bool = Query(...), db: Session = Depends(get_db)):
+    """Keşif akışını (pump.fun firehose) aç/kapat. Kapalıyken WS streaming kredisi
+    (MB başına) durur; analiz mevcut aday backlog'u üzerinde devam eder. Dinleyici
+    ~30 sn içinde uygular."""
+    val = set_runtime_flag(db, "discovery_enabled", enabled)
+    return {"discovery_enabled": bool(val.get("discovery_enabled"))}
 
 
 # --- Risk profilleri ---
