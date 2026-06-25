@@ -19,6 +19,25 @@ from ..services.pipeline import ingest_wallet, analyze_wallet
 logger = logging.getLogger(__name__)
 
 
+def _should_heartbeat(db, category: str, minutes: int = 20) -> bool:
+    """Aynı kategoride en son denetim kaydı `minutes` dakikadan eskiyse True.
+    Redis'ten bağımsız (DB tabanlı) — böylece nabız Loglar'da her zaman görünür
+    ama boğmaz. Hata olursa True döner (görünürlük > sessizlik)."""
+    from datetime import datetime, timezone, timedelta
+    from ..models import AuditLog
+    try:
+        last = (db.query(AuditLog).filter(AuditLog.category == category)
+                .order_by(AuditLog.id.desc()).first())
+        if last is None or last.created_at is None:
+            return True
+        ts = last.created_at
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - ts) > timedelta(minutes=minutes)
+    except Exception:  # noqa: BLE001
+        return True
+
+
 @contextlib.contextmanager
 def _singleton(name: str, ttl: int = 600):
     """Aynı görevin paralel (worker concurrency) çalışmasını önleyen Redis kilidi.
@@ -95,6 +114,26 @@ def analyze_discovered() -> dict:
                 fc[f] += 1
         logger.info("[ANALYZE] batch=%d tracked=%d top_fails=%s",
                     len(results), tracked, dict(fc.most_common(5)))
+        # Panelde (Loglar) görünür: yeni takibe alım olduysa yaz (nadir/önemli olay);
+        # hiç yoksa en sık eleme nedenini ~20 dk'da bir nabız olarak göster.
+        try:
+            from ..models import AuditLog
+            show, msg = False, ""
+            if tracked > 0:
+                show = True
+                msg = f"Analiz: {len(results)} cüzdan incelendi · {tracked} yeni TAKİBE alındı"
+            elif _should_heartbeat(db, "analysis", 20):
+                show = True
+                top = ", ".join(f"{k} ({v})" for k, v in fc.most_common(3)) or "—"
+                msg = (f"Analiz: {len(results)} cüzdan incelendi · 0 takibe alındı · "
+                       f"en sık eleme: {top}")
+            if show:
+                db.add(AuditLog(level="info", category="analysis", message=msg,
+                                context={"analyzed": len(results), "tracked": tracked,
+                                         "top_fails": dict(fc.most_common(5))}))
+                db.commit()
+        except Exception:  # noqa: BLE001
+            db.rollback()
         return {"analyzed": len(results), "tracked": tracked, "results": results}
     finally:
         db.close()
@@ -183,11 +222,38 @@ def poll_tracked_wallets() -> dict:
                 signer = PumpPortalTrader()
         except Exception:  # noqa: BLE001
             signer = None
-        return _poll(
+        result = _poll(
             db, chain, market=build_market_provider(), signer=signer,
             per_wallet=int(settings.tracked_poll_per_wallet),
             fresh_seconds=fresh, should_process=_should,
         )
+        # Panelde (Loglar) GÖRÜNÜR durum: aktivite varsa hemen yaz; aktivite yoksa
+        # en çok ~20 dk'da bir "nabız" yaz (Loglar'ı boğmadan izleyici canlı mı,
+        # cüzdanlar alım yapıyor mu görebilesin). Not: [WATCH] logger satırları
+        # yalnızca `docker logs`'ta olur; panel sadece bu DB kaydını gösterir.
+        try:
+            polled = result.get("polled", 0)
+            fresh_buys = result.get("fresh_buys", 0)
+            triggered = result.get("triggered", 0)
+            show = (fresh_buys > 0) or (triggered > 0) or _should_heartbeat(db, "watch", 20)
+            if show:
+                from ..models import AuditLog
+                if not polled:
+                    msg = "İzleme: takip edilen aktif cüzdan yok (havuz boş)"
+                elif fresh_buys == 0:
+                    msg = (f"İzleme: {polled} takip cüzdanı yoklandı · taze alım YOK "
+                           f"(cüzdanlar şu an alım yapmıyor)")
+                elif triggered == 0:
+                    msg = (f"İzleme: {polled} cüzdan · {fresh_buys} taze alım · 0 işlem "
+                           f"(token'ler kapıdan geçmedi — Risk Ayarları'ndan kapıyı gevşet)")
+                else:
+                    msg = (f"İzleme: {polled} cüzdan · {fresh_buys} taze alım · "
+                           f"{triggered} işlem tetiklendi")
+                db.add(AuditLog(level="info", category="watch", message=msg, context=result))
+                db.commit()
+        except Exception:  # noqa: BLE001
+            db.rollback()
+        return result
     finally:
         db.close()
 

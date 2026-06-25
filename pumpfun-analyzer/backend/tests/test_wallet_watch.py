@@ -94,6 +94,16 @@ def test_poll_triggers_trade_on_fresh_buy_and_dedups(db):
                                        PaperTrade.side == "buy").count() == 1
 
 
+def test_poll_task_writes_panel_heartbeat(db):
+    """Poll görevi durumunu Loglar'a (AuditLog category=watch) yazar; 20 dk throttle."""
+    from app.models import AuditLog
+    from app.workers.tasks import poll_tracked_wallets as task
+    db.query(AuditLog).filter(AuditLog.category == "watch").delete(); db.commit()
+    task(); task()  # ikinci çağrı throttle yüzünden yazmamalı
+    db.expire_all()
+    assert db.query(AuditLog).filter(AuditLog.category == "watch").count() == 1
+
+
 def test_poll_ignores_stale_buys(db):
     w = Wallet(address="WatchLeaderStale2222222222222222222222222",
                status=WalletStatus.tracked.value, latest_score=85.0, risk_flags=[])
