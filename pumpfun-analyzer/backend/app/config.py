@@ -95,17 +95,17 @@ class Settings(BaseSettings):
     discovery_min_token_hits: int = 1
     # Aynı anda izlenen (trade aboneliği açık) maksimum token sayısı
     discovery_max_watched_tokens: int = 120
-    # Her arka plan döngüsünde analiz edilecek aday sayısı. Helius Developer planı
-    # (10M kredi/ay) için dengelenmiş; aylık ~9M kredi içinde kalır.
-    discovery_batch_size: int = 3
-    # Aday analizinde taranacak işlem sayısı (derinlik). Developer planında 80 —
-    # cüzdanların kriterleri karşılayacak yeterli geçmişi görülür.
-    discovery_ingest_limit: int = 80
+    # Her arka plan döngüsünde analiz edilecek aday sayısı. Helius getTransaction
+    # kredi maliyeti yüksek olabildiğinden DÜŞÜK tutuldu (10M/ay kotasını koru).
+    discovery_batch_size: int = 2
+    # Aday analizinde taranacak işlem sayısı (derinlik). 50 ≈ "10 kapalı pozisyon"
+    # kriterini karşılamaya yeter; daha derin = daha çok kredi.
+    discovery_ingest_limit: int = 50
     # Aday analiz döngüsü aralığı (saniye) — Celery beat
-    discovery_interval_seconds: int = 90
-    # Helius keşfinde dakikada en fazla kaç işlem detayı çekilsin. Developer planı
-    # için 50; ücretsiz plana dönersen 30'a indir.
-    discovery_max_lookups_per_min: int = 50
+    discovery_interval_seconds: int = 120
+    # Helius keşfinde dakikada en fazla kaç işlem detayı çekilsin. Büyük backlog
+    # varken düşük tut (yeni keşfe değil, mevcut havuzu analize odaklan).
+    discovery_max_lookups_per_min: int = 15
 
     # --- Eşikler (varsayılan; veritabanındaki settings tablosu önceliklidir) ---
     min_wallet_score: float = 70.0

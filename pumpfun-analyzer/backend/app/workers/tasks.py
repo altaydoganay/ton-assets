@@ -5,9 +5,11 @@ yapılır. Ağ erişimi yoksa görevler güvenli biçimde no-op döner ve loglar
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 
 from .celery_app import celery_app
+from ..config import settings
 from ..database import SessionLocal
 from ..adapters.registry import build_chain_provider
 from ..adapters.rpc import RpcUnavailableError
@@ -15,6 +17,29 @@ from ..models import Wallet, WalletStatus
 from ..services.pipeline import ingest_wallet, analyze_wallet
 
 logger = logging.getLogger(__name__)
+
+
+@contextlib.contextmanager
+def _singleton(name: str, ttl: int = 600):
+    """Aynı görevin paralel (worker concurrency) çalışmasını önleyen Redis kilidi.
+    Böylece Helius çağrıları katlanmaz. Redis yoksa kilitsiz devam eder."""
+    got = True
+    r = None
+    try:
+        import redis as _redis
+        r = _redis.from_url(settings.redis_url, socket_connect_timeout=2)
+        got = bool(r.set(f"lock:{name}", "1", nx=True, ex=ttl))
+    except Exception:  # noqa: BLE001
+        got = True  # Redis erişilemezse engelleme
+        r = None
+    try:
+        yield got
+    finally:
+        if got and r is not None:
+            try:
+                r.delete(f"lock:{name}")
+            except Exception:  # noqa: BLE001
+                pass
 
 
 @celery_app.task(name="app.workers.tasks.ingest_and_analyze_wallet")
@@ -40,11 +65,13 @@ def analyze_discovered() -> dict:
     Aday toplama canlı dinleyicide (PumpPortal) yapılır; bu görev `discovered`
     durumundaki cüzdanları Helius ile analiz eder ve uygunları `tracked` yapar.
     """
-    from ..config import settings
     from ..services.discovery import analyze_discovered_batch
 
     db = SessionLocal()
     try:
+      with _singleton("analyze_discovered", ttl=600) as got:
+        if not got:
+            return {"skipped": "locked"}  # zaten çalışıyor (paralel katlanmayı önle)
         try:
             provider = build_chain_provider()
         except Exception as exc:  # noqa: BLE001
@@ -81,6 +108,9 @@ def reevaluate_analyzed() -> dict:
 
     db = SessionLocal()
     try:
+      with _singleton("reevaluate_analyzed", ttl=600) as got:
+        if not got:
+            return {"skipped": "locked"}
         result = _re(db)
         logger.info("[REEVAL] reevaluated=%d promoted=%d",
                     result.get("reevaluated", 0), result.get("promoted", 0))
@@ -97,6 +127,9 @@ def manage_positions() -> dict:
 
     db = SessionLocal()
     try:
+      with _singleton("manage_positions", ttl=120) as got:
+        if not got:
+            return {"skipped": "locked"}
         closed = _manage(db, build_market_provider())
         return {"closed": len(closed), "details": closed}
     except Exception as exc:  # noqa: BLE001

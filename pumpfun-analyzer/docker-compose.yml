@@ -41,7 +41,8 @@ services:
 
   worker:
     image: pumpfun-analyzer-backend
-    command: celery -A app.workers.celery_app.celery_app worker --loglevel=info
+    # concurrency=2: Helius çağrılarının paralel katlanmasını sınırla (kredi koru).
+    command: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=2
     env_file: .env
     depends_on:
       - backend
