@@ -4,12 +4,20 @@ mode: demo            # "demo" = paper (no money) | "live" = real money on Polym
 asset: btc            # trades the btc-updown-5m series
 
 # --- strategy ---
-threshold: 0.70             # enter the favorite when its ask >= this
-max_entry_price: 0.90       # ...but never pay more than this (entry discipline)
+# signal_mode:
+#   btc_move        -> enter the side BTC favors once it has moved far enough from
+#                      the window's open price. WORKS on these markets (the order
+#                      book stays ~0.50 until the final seconds, so the old logic
+#                      rarely fired). This is the default.
+#   book_threshold  -> original logic: buy a side whose ask is already >= threshold.
+signal_mode: btc_move
+move_threshold_usd: 10.0    # btc_move: enter when |BTC spot - strike| >= this ($)
+threshold: 0.70             # book_threshold mode only
+max_entry_price: 0.90       # never pay more than this (entry discipline)
 stop_loss_pct: 0.25         # exit if the mark falls this fraction below entry
-exit_before_sec: 20         # always flatten this many seconds before close
-entry_window_max_sec: 150   # only consider entering inside this window
-min_entry_seconds_left: 60
+exit_before_sec: 5          # always flatten this many seconds before close
+entry_window_max_sec: 120   # only consider entering inside this window
+min_entry_seconds_left: 10
 
 # --- sizing / risk ---
 stake_usd: 5.0              # nominal stake per trade

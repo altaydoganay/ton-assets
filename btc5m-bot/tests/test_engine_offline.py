@@ -27,7 +27,8 @@ def mk_quote(slug, sl, up_bid, up_ask, dn_bid, dn_ask):
 
 
 def run():
-    cfg = Config(mode="demo", threshold=0.70, max_entry_price=0.90,
+    cfg = Config(mode="demo", signal_mode="book_threshold",
+                 threshold=0.70, max_entry_price=0.90,
                  stop_loss_pct=0.25, exit_before_sec=20,
                  entry_window_max_sec=150, min_entry_seconds_left=30,
                  stake_usd=5.0, max_notional_usd=8.0, slippage_bps=0.0)

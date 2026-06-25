@@ -65,18 +65,30 @@ state.py     persists balance/PnL/trade counts across restarts (state.json)
 ```
 
 Each tick (default every 3s) it finds the soonest open round, pulls both
-sides' order books, and:
-- **flat** → if inside the entry window and a side's ask is in
-  `[threshold, max_entry_price]`, buy the stronger side;
+sides' order books and the live BTC spot, and:
+- **flat** → if inside the entry window, evaluate the entry signal
+  (`signal_mode`) and buy the favored side;
 - **in a position** → exit on stop-loss (`mark <= entry*(1-stop_loss_pct)`)
   or when `seconds_left <= exit_before_sec` (flatten before settlement).
+
+### Two entry signals (`signal_mode`)
+- **`btc_move`** (default): enter the side BTC favors once the live spot has
+  moved at least `move_threshold_usd` from the window's **strike** (BTC price at
+  the round's open). On these markets the order book sits near 0.50 until the
+  final seconds, so the original "ask already ≥ 0.70" trigger almost never fires
+  in calm conditions — BTC-vs-strike is observable every tick and actually
+  trades. A book-agreement guard avoids buying a side the book strongly disfavors.
+- **`book_threshold`**: the original logic — buy a side whose ask is already in
+  `[threshold, max_entry_price]`. Kept for comparison; rarely fires when BTC is calm.
 
 ## Configuration (`config.yaml`)
 
 | Key | Meaning |
 |---|---|
 | `mode` | `demo` or `live` |
-| `threshold` | enter favorite when its ask ≥ this (0.70) |
+| `signal_mode` | `btc_move` (default) or `book_threshold` |
+| `move_threshold_usd` | btc_move: enter when `|spot-strike|` ≥ this ($) |
+| `threshold` | book_threshold mode: enter favorite when its ask ≥ this (0.70) |
 | `max_entry_price` | never pay above this (0.90) |
 | `stop_loss_pct` | exit if mark falls this fraction below entry (0.25) |
 | `exit_before_sec` | flatten this many seconds before close (20) |

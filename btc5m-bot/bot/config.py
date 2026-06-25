@@ -13,12 +13,14 @@ class Config:
     asset: str = "btc"                    # market family: btc-updown-5m
 
     # strategy
-    threshold: float = 0.70               # enter favorite when its ask >= this
-    max_entry_price: float = 0.90         # ...but never pay above this
+    signal_mode: str = "btc_move"         # "btc_move" (BTC vs strike) or "book_threshold"
+    move_threshold_usd: float = 10.0      # btc_move: enter when |spot-strike| >= this
+    threshold: float = 0.70               # book mode: enter favorite when its ask >= this
+    max_entry_price: float = 0.90         # never pay above this (both modes)
     stop_loss_pct: float = 0.25           # exit if mark falls this % below entry
-    exit_before_sec: int = 20             # always flatten this many sec before close
-    entry_window_max_sec: int = 150       # only consider entering inside this window
-    min_entry_seconds_left: int = 60      # ...and not later than this
+    exit_before_sec: int = 5              # always flatten this many sec before close
+    entry_window_max_sec: int = 120       # only consider entering inside this window
+    min_entry_seconds_left: int = 10      # ...and not later than this
 
     # sizing / risk
     stake_usd: float = 5.0                # nominal stake per trade

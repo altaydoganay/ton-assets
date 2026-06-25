@@ -8,6 +8,20 @@
 
 ---
 
+## 🔄 Güncelleme notu (neden artık işlem açıyor)
+İlk sürüm, order book fiyatı **0.70**'e ulaşınca işlem açıyordu. Ama bu marketlerde
+fiyat, kapanışa son saniyelere kadar **~0.50**'de duruyor; o yüzden BTC sakinken
+hiç tetiklenmiyordu (saatlerce 0 işlem). Yeni varsayılan mod **`btc_move`**: BTC'nin
+pencerenin açılış fiyatına (**strike**) göre hareketini gerçek zamanlı kullanır ve
+hareket `move_threshold_usd`'yi (varsayılan 10$) geçince favori tarafa girer. Böylece
+çoğu 5-dk penceresinde işlem açar. (Eski davranışı istersen `config.yaml`'de
+`signal_mode: book_threshold` yap.)
+
+> Bu, botun **çalışmasını** sağlar — ama hâlâ kâr garantisi **yoktur**; strateji
+> beklenen değer olarak negatiftir. Demoda izle, gerçek parada dikkatli ol.
+
+---
+
 ## 0) Gereksinimler
 - **Python 3.10+** (3.11 önerilir)
 - **Git**

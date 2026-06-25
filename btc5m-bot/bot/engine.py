@@ -8,7 +8,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
-from . import market, strategy
+from . import market, strategy, feeds
 from .broker import Broker, Fill
 from .config import Config
 from .risk import RiskManager
@@ -37,6 +37,16 @@ class TradingEngine:
         self.pos: Position | None = None
         self._last_hb = 0.0
         self._hb_every = 30.0   # heartbeat status line cadence (seconds)
+        self._strike: dict[str, float] = {}   # market_id -> strike (cached)
+
+    def _get_strike(self, market_id: str, end_ts: int | None):
+        if end_ts is None:
+            return None
+        if market_id not in self._strike:
+            s = feeds.btc_minute_open(end_ts - 300)   # BTC at window open
+            if s is not None:
+                self._strike[market_id] = s
+        return self._strike.get(market_id)
 
     # ---- main loop ---------------------------------------------------------
     def run(self):
@@ -74,11 +84,26 @@ class TradingEngine:
         if self.state.already_traded(target["market_id"]):
             return
         q = market.quote(target)
-        self._heartbeat(q, ok, why)
+
+        # gather the BTC-move signal inputs (also shown in the heartbeat)
+        spot = strike = move = None
+        if self.cfg.signal_mode == "btc_move":
+            try:
+                spot = feeds.btc_spot()
+            except Exception:
+                spot = None
+            strike = self._get_strike(q.market_id, q.end_ts)
+            if spot is not None and strike is not None:
+                move = spot - strike
+
+        self._heartbeat(q, ok, why, move)
         if not ok:
             return
 
-        sig = strategy.entry_signal(q, self.cfg)
+        if self.cfg.signal_mode == "btc_move":
+            sig = strategy.entry_signal_btc_move(q, self.cfg, strike, spot)
+        else:
+            sig = strategy.entry_signal(q, self.cfg)
         if sig is None:
             return
         stake, shares = self.risk.position_stake(sig.ask)
@@ -93,15 +118,16 @@ class TradingEngine:
         self.log.info(f"ENTER {sig.side} {q.slug} @ {fill.price:.3f} "
                       f"x{fill.shares:.2f} (${stake:.2f}) | {q.seconds_left}s left")
 
-    def _heartbeat(self, q, can_open, why):
+    def _heartbeat(self, q, can_open, why, move=None):
         now = time.time()
         if now - self._last_hb < self._hb_every:
             return
         self._last_hb = now
         gate = "ready" if can_open else f"blocked({why})"
+        mv = f"BTCmove={move:+.0f}$ " if move is not None else ""
         self.log.info(
-            f"[hb] {q.slug} {q.seconds_left}s left | UP ask={q.up_ask} "
-            f"DN ask={q.dn_ask} | {gate} | "
+            f"[hb] {q.slug} {q.seconds_left}s left | {mv}"
+            f"UP ask={q.up_ask} DN ask={q.dn_ask} | {gate} | "
             f"bal ${self.state.data['balance_usd']:.2f} "
             f"day PnL ${self.state.data['realized_pnl_today']:+.2f} "
             f"trades {self.state.data['trades_today']}")

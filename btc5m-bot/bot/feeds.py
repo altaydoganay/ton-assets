@@ -13,9 +13,24 @@ def _get(url: str, timeout: int = 12):
 
 
 def btc_spot() -> float:
-    """Live BTC/USD spot (Coinbase). Used for sanity/logging."""
+    """Live BTC/USD spot (Coinbase)."""
     d = _get("https://api.exchange.coinbase.com/products/BTC-USD/ticker")
     return float(d["price"])
+
+
+def btc_minute_open(ts: int) -> float | None:
+    """BTC open price for the 1-minute candle containing `ts` (Coinbase).
+
+    Used as the market 'strike' = BTC price at the 5-min window open. This is a
+    close proxy for Polymarket's strike; tiny exchange/timestamp differences are
+    tolerated by the book-agreement guard in the strategy.
+    """
+    minute = (ts // 60) * 60
+    d = _get("https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=60")
+    for c in d:                     # [time, low, high, open, close, volume]
+        if int(c[0]) == minute:
+            return float(c[3])
+    return None
 
 
 def list_updown_markets(asset: str = "btc") -> list[dict]:
