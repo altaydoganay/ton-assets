@@ -37,6 +37,22 @@ def _raw_buy(wallet, mint, ts, sig):
     }
 
 
+def _raw_sell(wallet, mint, ts, sig):
+    """jsonParsed RPC işlemi: cüzdan +1 SOL, -100 token (satış)."""
+    return {
+        "blockTime": ts, "slot": ts,
+        "transaction": {"signatures": [sig], "message": {
+            "accountKeys": [{"pubkey": wallet}],
+            "instructions": [{"programId": PUMP_FUN_PROGRAM}],
+        }},
+        "meta": {
+            "fee": 5000, "preBalances": [1_000_000_000], "postBalances": [2_000_000_000],
+            "preTokenBalances": [{"owner": wallet, "mint": mint, "uiTokenAmount": {"uiAmount": 100}}],
+            "postTokenBalances": [{"owner": wallet, "mint": mint, "uiTokenAmount": {"uiAmount": 0}}],
+        },
+    }
+
+
 class PollChain(ChainProvider):
     """Ucuz yol için imza+işlem; ayrıca token değerlendirmesi (olgun güvenli)."""
     name = "pollchain"
@@ -99,6 +115,28 @@ def test_poll_triggers_trade_on_fresh_buy_and_dedups(db):
     assert res2["triggered"] == 0  # Alert dedup => çift işlem yok
     assert db.query(PaperTrade).filter(PaperTrade.source_signature == "watch-buy-1",
                                        PaperTrade.side == "buy").count() == 1
+
+
+def test_poll_mirrors_leader_sell(db):
+    """Lider SATARSA biz de satarız: açık pozisyonu olan bir token'da satış
+    görülünce yansıtılır (mirror_sell)."""
+    db.query(PaperTrade).delete()
+    db.query(Wallet).filter(Wallet.status == WalletStatus.tracked.value).delete(); db.commit()
+    w = Wallet(address="MirrorLeader1111111111111111111111111111111",
+               status=WalletStatus.tracked.value, latest_score=85.0, risk_flags=[])
+    db.add(w); db.commit()
+    set_setting(db, "risk", _balanced_risk()); reset_engine()
+    now = int(time.time())
+    mint = "MirrorMint11111111111111111111111111111111"
+    # 1) ALIM → pozisyon açılır
+    buy_chain = PollChain({"mir-buy": now - 120}, {"mir-buy": _raw_buy(w.address, mint, now - 120, "mir-buy")})
+    poll_tracked_wallets(db, buy_chain, market=DecentMarket(), per_wallet=6, fresh_seconds=900)
+    assert db.query(PaperTrade).filter(PaperTrade.side == "buy", PaperTrade.token_mint == mint).count() == 1
+    # 2) SATIŞ → yansıtılır
+    sell_chain = PollChain({"mir-sell": now - 30}, {"mir-sell": _raw_sell(w.address, mint, now - 30, "mir-sell")})
+    res = poll_tracked_wallets(db, sell_chain, market=DecentMarket(), per_wallet=6, fresh_seconds=900)
+    assert res["mirrored_sells"] == 1
+    assert db.query(PaperTrade).filter(PaperTrade.side == "sell", PaperTrade.token_mint == mint).count() == 1
 
 
 def test_poll_ignores_stale_buys_without_fetching(db):

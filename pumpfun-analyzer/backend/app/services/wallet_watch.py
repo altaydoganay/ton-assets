@@ -26,7 +26,9 @@ from ..adapters.base import ChainProvider, MarketProvider
 from ..adapters.pumpfun import normalize_rpc_transaction
 from ..adapters.pumpportal import PumpPortalTrade, PumpPortalTrader
 from ..core.analysis.swap_detection import detect_swap
-from ..models import Alert, Wallet, WalletStatus
+from sqlalchemy import case, func
+
+from ..models import Alert, PaperTrade, Wallet, WalletStatus
 from ..notifications.telegram import TelegramNotifier
 from .live_flow import handle_trade_event
 
@@ -53,7 +55,8 @@ def poll_tracked_wallets(
     tracked = db.query(Wallet).filter(Wallet.status == WalletStatus.tracked.value).all()
     now = time.time()
     fresh_txns = 0   # taze + yeni (getTransaction çekilen) işlem sayısı
-    triggered = 0
+    triggered = 0    # açılan ALIM sayısı
+    mirrored = 0     # yansıtılan SATIŞ sayısı
     reasons: Counter = Counter()  # işlem AÇILMADIYSA gerçek sebepler (teşhis)
 
     for w in tracked:
@@ -67,14 +70,11 @@ def poll_tracked_wallets(
             block_time = s.get("blockTime") if isinstance(s, dict) else None
             if not sig:
                 continue
-            # TAZELİK filtresi imza listesinden (getTransaction'a GİTMEDEN) — kredi koruması
+            # TAZELİK filtresi imza listesinden (getTransaction'a GİTMEDEN)
             if block_time is not None and (now - block_time) > fresh_seconds:
                 continue
-            # dedup: gerçek işlem/bildirim oluştuysa (Alert) tekrar işleme — çift yok
-            if db.query(Alert).filter(Alert.signature == sig).first():
-                continue
             try:
-                raw = chain.get_transaction(sig)  # ~1 kredi (yalnızca taze+Alert'siz için)
+                raw = chain.get_transaction(sig)  # ~1 kredi
             except Exception as exc:  # noqa: BLE001
                 logger.warning("[WATCH] getTransaction hatası %s: %s", sig[:8], exc)
                 continue
@@ -82,14 +82,35 @@ def poll_tracked_wallets(
             if ntx is None:
                 continue
             swap = detect_swap(ntx, w.address)
-            if swap is None or swap.side != "buy":
+            if swap is None:
                 continue
             if now - swap.block_time > fresh_seconds:
                 continue
+
+            if swap.side == "buy":
+                # dedup: bu alımı zaten işlediysek (Alert) atla → çift yok
+                if db.query(Alert).filter(Alert.signature == swap.signature).first():
+                    continue
+            elif swap.side == "sell":
+                # Lider SATIŞINI yansıt — ama yalnızca o token'da AÇIK pozisyonumuz varsa.
+                net = (db.query(
+                    func.coalesce(func.sum(
+                        case((PaperTrade.side == "buy", PaperTrade.token_amount),
+                             else_=-PaperTrade.token_amount)), 0.0))
+                    .filter(PaperTrade.token_mint == swap.token_mint).scalar() or 0.0)
+                if net <= 0:
+                    continue  # elimizde pozisyon yok — yansıtacak bir şey yok
+                # dedup: bu satışı zaten yansıttıysak atla
+                if db.query(PaperTrade).filter(PaperTrade.source_signature == swap.signature,
+                                               PaperTrade.side == "sell").first():
+                    continue
+            else:
+                continue
+
             fresh_txns += 1
             trade = PumpPortalTrade(
                 signature=swap.signature, trader=w.address, mint=swap.token_mint,
-                side="buy", sol_amount=swap.sol_amount, token_amount=swap.token_amount,
+                side=swap.side, sol_amount=swap.sol_amount, token_amount=swap.token_amount,
                 pool=swap.venue, market_cap_sol=None, raw={},
             )
             try:
@@ -97,7 +118,9 @@ def poll_tracked_wallets(
                                          notifier=notifier, signer=signer)
                 act = res.get("action")
                 if act == "buy" and res.get("traded"):
-                    triggered += 1  # gerçekten paper/canlı işlem açıldı
+                    triggered += 1  # gerçekten paper/canlı ALIM açıldı
+                elif act == "mirror_sell":
+                    mirrored += 1   # lider satışı yansıtıldı
                 elif act == "buy":
                     tb = res.get("trade_blocked")
                     reasons["motor: " + (", ".join(tb) if tb else "motor kapalı veya limit")[:80]] += 1
@@ -111,10 +134,10 @@ def poll_tracked_wallets(
                 logger.exception("[WATCH] işlem akışı hatası %s: %s", swap.signature[:8], exc)
                 reasons[f"HATA {type(exc).__name__}: {exc}"[:90]] += 1
 
-    logger.info("[WATCH] tracked=%d fresh_buys=%d triggered=%d reasons=%s",
-                len(tracked), fresh_txns, triggered, dict(reasons.most_common(5)))
+    logger.info("[WATCH] tracked=%d fresh=%d alım=%d satış=%d reasons=%s",
+                len(tracked), fresh_txns, triggered, mirrored, dict(reasons.most_common(5)))
     return {"polled": len(tracked), "fresh_buys": fresh_txns, "triggered": triggered,
-            "reasons": dict(reasons.most_common(5))}
+            "mirrored_sells": mirrored, "reasons": dict(reasons.most_common(5))}
 
 
 def run_diagnostic_trade(db: Session, chain: ChainProvider,

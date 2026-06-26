@@ -219,7 +219,8 @@ def poll_tracked_wallets() -> dict:
             polled = result.get("polled", 0)
             fresh_buys = result.get("fresh_buys", 0)
             triggered = result.get("triggered", 0)
-            show = (fresh_buys > 0) or (triggered > 0) or _should_heartbeat(db, "watch", 20)
+            mirrored = result.get("mirrored_sells", 0)
+            show = (fresh_buys > 0) or (triggered > 0) or (mirrored > 0) or _should_heartbeat(db, "watch", 20)
             if show:
                 from datetime import datetime, timezone, timedelta
                 from ..models import AuditLog, PaperTrade
@@ -245,8 +246,8 @@ def poll_tracked_wallets() -> dict:
                     msg = (f"İzleme: {polled} cüzdan · {fresh_buys} taze alım · 0 işlem · "
                            f"kapı={gate} · sebep: {reason_txt or 'bu döngüde yeni alım yok (dedup)'}") + tail
                 else:
-                    msg = (f"İzleme: {polled} cüzdan · {fresh_buys} taze alım · "
-                           f"{triggered} işlem AÇILDI · kapı={gate}") + tail
+                    msg = (f"İzleme: {polled} cüzdan · {fresh_buys} taze · "
+                           f"{triggered} ALIM açıldı · {mirrored} SATIŞ yansıtıldı · kapı={gate}") + tail
                 db.add(AuditLog(level="info", category="watch", message=msg, context=result))
                 db.commit()
         except Exception:  # noqa: BLE001
