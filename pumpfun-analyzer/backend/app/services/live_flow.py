@@ -164,6 +164,19 @@ def handle_trade_event(
     market_price_sol = swap.price_sol
     liquidity_sol = assessment.liquidity_sol
 
+    # AKILLI PARA MUTABAKATI (confluence): bu token'i son pencerede kaç FARKLI takip
+    # cüzdanı aldı? 2+ bağımsız kaliteli cüzdan = çok daha güçlü sinyal. İsteğe bağlı
+    # kapı: min_confluence > 1 ise yeterli mutabakat yoksa alım yapılmaz.
+    from .signals import token_confluence
+    risk_cfg = get_setting(db, "risk")
+    min_conf = int(risk_cfg.get("min_confluence", 1) or 1)
+    conf_window = int(risk_cfg.get("confluence_window_minutes", 30) or 30)
+    confluence = token_confluence(db, trade.mint, conf_window) if trade.side == "buy" else 0
+    conf_block = None
+    if trade.side == "buy" and token_ok and min_conf > 1 and confluence < min_conf:
+        token_ok = False
+        conf_block = f"mutabakat yetersiz ({confluence}/{min_conf} takip cüzdanı aldı)"
+
     summary = {
         "wallet": short_addr(trade.trader),
         "token": short_addr(trade.mint),
@@ -171,6 +184,7 @@ def handle_trade_event(
         "wallet_score": wallet.latest_score,
         "token_score": assessment.total,
         "token_ok": token_ok,
+        "confluence": confluence,
         "cached": assessment.cached,
     }
 
@@ -189,8 +203,8 @@ def handle_trade_event(
         # Sebep özetin içinde döner; izleyici nabzı bunu her döngüde gösterir.
         # (Burada AYRI bir "Atlandı" denetim kaydı YAZMAYIZ — yeniden değerlendirme
         # nedeniyle Loglar'ı boğmamak için.)
-        reason = ("güvenlik vetosu: " + ", ".join(assessment.veto_reasons)) if assessment.vetoed \
-            else f"token puanı {assessment.total:.0f} < kapı eşiği ({token_gate})"
+        reason = conf_block or (("güvenlik vetosu: " + ", ".join(assessment.veto_reasons)) if assessment.vetoed
+                                else f"token puanı {assessment.total:.0f} < kapı eşiği ({token_gate})")
         summary["reason"] = reason
         return summary
 
@@ -231,12 +245,13 @@ def handle_trade_event(
         summary["trade_blocked"] = decision.reasons
     # Karar logu (Loglar sayfası): işlem yapıldı mı / neden yapılmadı
     if decision and decision.allowed:
+        conf_txt = f" · 🔥{confluence} akıllı cüzdan" if confluence >= 2 else ""
         _audit(db, "info",
                f"İşlem AÇILDI — {short_addr(trade.trader)} → {short_addr(trade.mint)} "
-               f"({engine.cfg.mode}, {decision.sol_amount:.3f} SOL)",
+               f"({engine.cfg.mode}, {decision.sol_amount:.3f} SOL){conf_txt}",
                {"wallet": trade.trader, "token": trade.mint, "wallet_score": wallet.latest_score,
                 "token_score": assessment.total, "sol_amount": decision.sol_amount,
-                "mode": engine.cfg.mode, "signature": trade.signature})
+                "confluence": confluence, "mode": engine.cfg.mode, "signature": trade.signature})
     else:
         block = decision.reasons if decision else ["işlem motoru kapalı (yalnızca bildirim)"]
         _audit(db, "info",

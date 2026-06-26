@@ -50,8 +50,15 @@ DEFAULTS: dict[str, dict] = {
         "blocked_tokens": [],
         "only_wallets": [],
         "close_mode": "proportional",
-        "take_profit_pct": 0.6,   # +%60'da sat (dengeli)
-        "stop_loss_pct": 0.3,     # -%30'da sat (dengeli)
+        "take_profit_pct": 0.5,   # +%50'de sat (sert TP)
+        "stop_loss_pct": 0.25,    # -%25'te sat (sert SL)
+        # --- AKILLI ÇIKIŞ (kârı belirleyen yer) ---
+        "trailing_stop_pct": 0.12,   # fiyat zirveden %12 düşerse sat (0 = kapalı)
+        "trail_activate_pct": 0.15,  # takip eden stop, +%15 kâra ulaşınca aktifleşir
+        "max_hold_minutes": 45,      # bu süre dolunca pozisyonu kapat (0 = kapalı)
+        # --- AKILLI PARA MUTABAKATI (confluence) ---
+        "min_confluence": 1,             # 1 = kapalı; 2 = sadece 2+ takip cüzdanının aldığı token'i kopyala
+        "confluence_window_minutes": 30, # mutabakat penceresi (dk)
         # PAPER (simülasyon) modunda her işlem SABİT bu kadar SOL olsun — net
         # kâr/zarar adil ölçülsün (lider miktarlarından bağımsız). Canlıda
         # fixed_sol_amount / proportional kullanılır. Cüzdan-bazlı elle override
@@ -65,6 +72,8 @@ DEFAULTS: dict[str, dict] = {
     },
     # Cüzdan-bazlı elle SOL override: {cüzdan_adresi: sol_miktarı}
     "copy_overrides": {},
+    # Akıllı çıkış için pozisyon başına zirve fiyat + giriş zamanı (otomatik tutulur)
+    "position_state": {},
 }
 
 
