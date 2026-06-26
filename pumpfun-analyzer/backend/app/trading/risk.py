@@ -15,8 +15,9 @@ class RiskConfig:
     mode: str = "paper"                    # paper | alerts_only | live
     live_confirmed: bool = False           # kullanıcı canlı riski onayladı mı
 
-    fixed_sol_amount: float = 0.05         # işlem başına sabit SOL
-    proportional: bool = False             # hedef cüzdan miktarına orantılı
+    fixed_sol_amount: float = 0.05         # işlem başına sabit SOL (canlı)
+    paper_trade_sol: float = 0.01          # PAPER modunda her işlem SABİT bu kadar
+    proportional: bool = False             # hedef cüzdan miktarına orantılı (canlı)
     proportional_factor: float = 1.0
     max_position_sol: float = 0.5
     max_daily_spend_sol: float = 2.0
@@ -95,6 +96,7 @@ def evaluate_buy(
     token_sellable: bool,
     follow_lag_seconds: float,
     leader_sol_amount: float | None = None,
+    forced_amount: float | None = None,
 ) -> RiskDecision:
     reasons: list[str] = []
     day.roll_day()  # gün değiştiyse günlük sayaçları sıfırla
@@ -128,8 +130,12 @@ def evaluate_buy(
     if follow_lag_seconds > cfg.max_follow_lag_seconds:
         reasons.append("İşlem gecikmesi izleme penceresini aştı")
 
-    # Miktar hesapla
-    if cfg.proportional and leader_sol_amount is not None:
+    # Miktar hesapla — öncelik: elle override (forced) > PAPER sabit > orantılı/sabit
+    if forced_amount is not None and forced_amount > 0:
+        amount = forced_amount
+    elif cfg.mode == "paper":
+        amount = cfg.paper_trade_sol  # paper'da herkes aynı (adil kâr/zarar ölçümü)
+    elif cfg.proportional and leader_sol_amount is not None:
         amount = leader_sol_amount * cfg.proportional_factor
     else:
         amount = cfg.fixed_sol_amount

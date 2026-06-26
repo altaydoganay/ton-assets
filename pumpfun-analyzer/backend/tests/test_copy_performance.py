@@ -50,29 +50,31 @@ def test_prune_blocks_on_consecutive_losses(db):
     _w(db, addr)
     for i in range(5):  # 5 ardışık zarar
         _sell(db, addr, f"L{i}", -0.1)
-    res = prune_underperformers(db, max_consecutive_losses=5, min_closed_trades=4, max_drawdown_sol=-99)
+    res = prune_underperformers(db, max_consecutive_losses=5, min_closed_trades=6, min_win_rate=0.0)
     assert res["pruned"] == 1
     db.refresh(db.query(Wallet).filter(Wallet.address == addr).first())
     assert db.query(Wallet).filter(Wallet.address == addr).first().status == WalletStatus.blocked.value
 
 
-def test_prune_respects_min_closed(db):
+def test_prune_winrate_respects_min_closed(db):
     _clean(db)
     addr = "PruneTooFew2222222222222222222222222222222"
     _w(db, addr)
-    _sell(db, addr, "A", -0.1); _sell(db, addr, "B", -0.1)  # sadece 2 < min 4
-    res = prune_underperformers(db, max_consecutive_losses=2, min_closed_trades=4, max_drawdown_sol=-99)
+    # 3 kayıp (başarı %0) ama < min_closed 6 => yargılanmaz (ardışık devre dışı)
+    _sell(db, addr, "A", -0.1); _sell(db, addr, "B", -0.1); _sell(db, addr, "C", -0.1)
+    res = prune_underperformers(db, max_consecutive_losses=99, min_closed_trades=6, min_win_rate=0.30)
     assert res["pruned"] == 0
     assert db.query(Wallet).filter(Wallet.address == addr).first().status == WalletStatus.tracked.value
 
 
-def test_prune_blocks_on_drawdown(db):
+def test_prune_blocks_on_low_win_rate(db):
     _clean(db)
-    addr = "PruneDrawdown333333333333333333333333333333"
+    addr = "PruneLowWin333333333333333333333333333333"
     _w(db, addr)
-    _sell(db, addr, "A", 0.1); _sell(db, addr, "B", -0.4)
-    _sell(db, addr, "C", 0.1); _sell(db, addr, "D", -0.5)  # toplam -0.7 <= -0.5
-    res = prune_underperformers(db, max_consecutive_losses=99, min_closed_trades=4, max_drawdown_sol=-0.5)
+    # 8 işlem, 2 kazanç 6 kayıp = %25 < %30 (ardışık devre dışı: max_consec=99)
+    for pnl in [0.1, -0.1, 0.1, -0.1, -0.1, -0.1, -0.1, -0.1]:
+        _sell(db, addr, "M", pnl)
+    res = prune_underperformers(db, max_consecutive_losses=99, min_closed_trades=6, min_win_rate=0.30)
     assert res["pruned"] == 1
 
 

@@ -150,3 +150,17 @@ def approve_wallet(address: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(w)
     return w
+
+
+@router.post("/{address}/copy-amount")
+def set_copy_amount(address: str, sol: float = Query(...), db: Session = Depends(get_db)):
+    """Bu cüzdana özel kopya SOL miktarı ata. sol<=0 => override'ı kaldır (varsayılana
+    döner: paper'da sabit miktar, canlıda fixed/orantılı)."""
+    from ..services.settings_service import get_setting, set_setting
+    overrides = dict(get_setting(db, "copy_overrides") or {})
+    if sol and sol > 0:
+        overrides[address] = float(sol)
+    else:
+        overrides.pop(address, None)
+    set_setting(db, "copy_overrides", overrides)
+    return {"address": address, "copy_override_sol": overrides.get(address)}

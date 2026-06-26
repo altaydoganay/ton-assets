@@ -3,12 +3,18 @@ import { useState } from "react";
 import { Check, Copy, AlertTriangle } from "lucide-react";
 
 export function StatCard({
-  label, value, hint, accent,
-}: { label: string; value: React.ReactNode; hint?: string; accent?: string }) {
+  label, value, hint, accent, tone, icon,
+}: {
+  label: string; value: React.ReactNode; hint?: string; accent?: string;
+  tone?: string; icon?: React.ReactNode;
+}) {
+  // tone => kart rengi (üst şerit + zemin + ikon); accent => sayı rengi
   return (
-    <div className="card card-hover">
+    <div className="stat" style={tone ? ({ ["--tone" as any]: tone }) : undefined}>
+      {icon && <div className="stat-ico">{icon}</div>}
       <div className="text-xs muted">{label}</div>
-      <div className="mt-1 text-2xl font-bold" style={accent ? { color: accent } : undefined}>{value}</div>
+      <div className="mt-0.5 text-2xl font-extrabold tracking-tight"
+        style={{ color: accent || tone || undefined }}>{value}</div>
       {hint && <div className="mt-1 text-xs muted">{hint}</div>}
     </div>
   );

@@ -50,17 +50,33 @@ def test_risk_blocks_when_disabled():
 
 
 def test_risk_allows_when_paper_enabled():
-    cfg = RiskConfig(enabled=True, mode="paper", min_liquidity_sol=5)
+    cfg = RiskConfig(enabled=True, mode="paper", paper_trade_sol=0.02, min_liquidity_sol=5)
     dec = evaluate_buy(cfg, DayState(), wallet_address="W", token_mint="T",
                        wallet_score=90, token_score=90, token_liquidity_sol=100,
                        token_sellable=True, follow_lag_seconds=5)
     assert dec.allowed is True
-    assert dec.sol_amount == cfg.fixed_sol_amount
+    assert dec.sol_amount == cfg.paper_trade_sol  # paper modunda sabit miktar
+
+
+def test_paper_uniform_amount_overrides_fixed():
+    # Paper modunda fixed_sol_amount DEĞİL, paper_trade_sol kullanılır (adil ölçüm)
+    cfg = RiskConfig(enabled=True, mode="paper", fixed_sol_amount=0.5, paper_trade_sol=0.01, min_liquidity_sol=5)
+    dec = evaluate_buy(cfg, DayState(), wallet_address="W", token_mint="T", wallet_score=90,
+                       token_score=90, token_liquidity_sol=100, token_sellable=True, follow_lag_seconds=5)
+    assert dec.sol_amount == 0.01
+
+
+def test_forced_amount_overrides_everything():
+    cfg = RiskConfig(enabled=True, mode="paper", paper_trade_sol=0.01, max_position_sol=1.0, min_liquidity_sol=5)
+    dec = evaluate_buy(cfg, DayState(), wallet_address="W", token_mint="T", wallet_score=90,
+                       token_score=90, token_liquidity_sol=100, token_sellable=True,
+                       follow_lag_seconds=5, forced_amount=0.25)
+    assert dec.sol_amount == 0.25
 
 
 def test_risk_daily_spend_limit():
     from datetime import datetime, timezone
-    cfg = RiskConfig(enabled=True, mode="paper", fixed_sol_amount=1.0, max_position_sol=1.0, max_daily_spend_sol=1.5)
+    cfg = RiskConfig(enabled=True, mode="paper", paper_trade_sol=1.0, max_position_sol=1.0, max_daily_spend_sol=1.5)
     # AYNI gün içinde birikmiş harcama (gün değişimi sıfırlamasın diye date=bugün)
     day = DayState(spent_sol=1.0, date=datetime.now(timezone.utc).strftime("%Y-%m-%d"))
     dec = evaluate_buy(cfg, day, wallet_address="W", token_mint="T",

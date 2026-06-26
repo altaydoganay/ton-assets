@@ -57,6 +57,7 @@ def _risk_config(db: Session) -> RiskConfig:
         mode=r.get("mode", "paper"),
         live_confirmed=bool(r.get("live_confirmed")),
         fixed_sol_amount=float(r.get("fixed_sol_amount", 0.05)),
+        paper_trade_sol=float(r.get("paper_trade_sol", 0.01)),
         proportional=bool(r.get("proportional")),
         proportional_factor=float(r.get("proportional_factor", 1.0)),
         max_position_sol=float(r.get("max_position_sol", 0.5)),
@@ -211,7 +212,10 @@ def handle_trade_event(
     engine = get_engine(db, signer=signer)
     decision = None
     if engine.cfg.enabled and engine.cfg.mode != "alerts_only":
-        ctx = _ctx(trade, wallet, assessment.total, assessment.vetoed, market_price_sol, liquidity_sol)
+        # Cüzdan-bazlı elle SOL override (varsa) — paper sabitini de geçersiz kılar
+        override = get_setting(db, "copy_overrides").get(trade.trader)
+        ctx = _ctx(trade, wallet, assessment.total, assessment.vetoed, market_price_sol, liquidity_sol,
+                   forced=float(override) if override else None)
         try:
             decision = engine.on_leader_buy(db, ctx)
             if alert and decision and decision.allowed:
@@ -244,7 +248,7 @@ def handle_trade_event(
 
 
 def _ctx(trade: PumpPortalTrade, wallet: Wallet, token_total: float, token_vetoed: bool,
-         price_sol: float, liquidity_sol: float) -> TradeContext:
+         price_sol: float, liquidity_sol: float, forced: float | None = None) -> TradeContext:
     return TradeContext(
         wallet_address=trade.trader,
         token_mint=trade.mint,
@@ -256,4 +260,5 @@ def _ctx(trade: PumpPortalTrade, wallet: Wallet, token_total: float, token_vetoe
         market_price_sol=price_sol,
         leader_sol_amount=trade.sol_amount,
         source_signature=trade.signature,
+        forced_sol_amount=forced,
     )

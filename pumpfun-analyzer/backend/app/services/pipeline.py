@@ -199,6 +199,10 @@ def analyze_wallet(
 
     result = score_wallet(perf, signals, weights=weights, eligibility=eligibility, threshold=threshold)
     wallet = get_or_create_wallet(db, address)
+    # Liderin ORTALAMA alım büyüklüğü (SOL) — 10 SOL'lük trader ile 0.01'lik dust'ı
+    # ayırt etmek için (kopyalama miktarımızı değiştirmez; sınıflandırma sinyali).
+    buy_sizes = [e.sol_amount for e in events if e.side == "buy" and e.sol_amount]
+    avg_buy = sum(buy_sizes) / len(buy_sizes) if buy_sizes else 0.0
     metrics = {
         "swaps_analyzed": perf.swaps_analyzed,
         "closed_positions": perf.closed_positions,
@@ -209,6 +213,7 @@ def analyze_wallet(
         "token_diversity": perf.token_diversity,
         "median_hold_seconds": perf.median_hold_seconds,
         "history_days": history_days,
+        "avg_buy_size_sol": round(avg_buy, 4),
     }
     if persist:
         persist_wallet_score(db, wallet, result, metrics=metrics, demote_below=max(0.0, threshold - 5))

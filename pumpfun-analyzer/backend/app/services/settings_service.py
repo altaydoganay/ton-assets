@@ -52,12 +52,19 @@ DEFAULTS: dict[str, dict] = {
         "close_mode": "proportional",
         "take_profit_pct": 0.6,   # +%60'da sat (dengeli)
         "stop_loss_pct": 0.3,     # -%30'da sat (dengeli)
-        # --- Kopya performansına göre OTOMATİK ELEME ---
+        # PAPER (simülasyon) modunda her işlem SABİT bu kadar SOL olsun — net
+        # kâr/zarar adil ölçülsün (lider miktarlarından bağımsız). Canlıda
+        # fixed_sol_amount / proportional kullanılır. Cüzdan-bazlı elle override
+        # (copy_overrides) her ikisini de geçersiz kılar.
+        "paper_trade_sol": 0.01,
+        # --- Kopya performansına göre OTOMATİK ELEME (bütçeden BAĞIMSIZ) ---
         "copy_prune_enabled": True,
         "copy_max_consecutive_losses": 5,   # N ardışık zarar => cüzdanı engelle
-        "copy_min_closed_trades": 4,        # yargılamadan önce en az N kapanmış işlem
-        "copy_max_drawdown_sol": -0.5,      # kümülatif kopya PnL bu SOL'un altına düşerse engelle
+        "copy_min_closed_trades": 6,        # başarı-oranı yargısı için en az N kapanmış işlem
+        "copy_min_win_rate": 0.30,          # başarı oranı bunun altındaysa engelle (% bazlı)
     },
+    # Cüzdan-bazlı elle SOL override: {cüzdan_adresi: sol_miktarı}
+    "copy_overrides": {},
 }
 
 
@@ -162,8 +169,10 @@ def seed_defaults(db: Session) -> None:
         risk = get_setting(db, "risk")
         risk.setdefault("copy_prune_enabled", True)
         risk.setdefault("copy_max_consecutive_losses", 5)
-        risk.setdefault("copy_min_closed_trades", 4)
-        risk.setdefault("copy_max_drawdown_sol", -0.5)
+        risk.setdefault("copy_min_closed_trades", 6)
+        risk.setdefault("copy_min_win_rate", 0.30)
+        risk.setdefault("paper_trade_sol", 0.01)
+        risk.pop("copy_max_drawdown_sol", None)  # SOL miktarına göre yargılama kaldırıldı
         set_setting(db, "risk", risk)
         set_setting(db, "_meta_risk_policy_v7", {"applied": True})
 

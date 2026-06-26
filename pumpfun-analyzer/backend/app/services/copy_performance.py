@@ -60,6 +60,8 @@ def wallet_copy_stats(db: Session, address: str) -> dict:
 def tracked_copy_stats(db: Session, include_blocked: bool = False) -> list[dict]:
     """Takip edilen (ve istenirse engellenen) cüzdanların kopya performansı —
     en kötüden en iyiye değil, PnL'e göre sıralı (en iyi üstte)."""
+    from .settings_service import get_setting
+    overrides = get_setting(db, "copy_overrides")
     statuses = [WalletStatus.tracked.value]
     if include_blocked:
         statuses.append(WalletStatus.blocked.value)
@@ -70,18 +72,21 @@ def tracked_copy_stats(db: Session, include_blocked: bool = False) -> list[dict]
         st["status"] = w.status
         st["score"] = w.latest_score
         st["label"] = w.label
+        st["avg_buy_size_sol"] = (w.metrics or {}).get("avg_buy_size_sol")
+        st["copy_override_sol"] = overrides.get(w.address)
         rows.append(st)
     rows.sort(key=lambda r: r["total_pnl_sol"], reverse=True)
     return rows
 
 
 def prune_underperformers(db: Session, *, enabled: bool = True, max_consecutive_losses: int = 5,
-                          min_closed_trades: int = 4, max_drawdown_sol: float = -0.5) -> dict:
+                          min_closed_trades: int = 6, min_win_rate: float = 0.30) -> dict:
     """Kopya performansı kötü cüzdanları ENGELLE (status=blocked).
 
-    Kriterler (yeterli örneklem -- en az `min_closed_trades` kapanmış işlem sonrası):
+    Kriterler BÜTÇEDEN BAĞIMSIZDIR (kaybedilen SOL miktarına göre DEĞİL — herkesin
+    bütçesi farklı). Yeterli örneklem (>= `min_closed_trades` kapanmış işlem) sonrası:
       - `max_consecutive_losses` (vars. 5) ardışık zarar, VEYA
-      - kümülatif kopya PnL <= `max_drawdown_sol` (vars. -0.5 SOL).
+      - başarı oranı < `min_win_rate` (vars. %30).
     Engellenen cüzdan tekrar takibe ALINMAZ (persist_wallet_score blocked'ı korur);
     kullanıcı isterse panelden elle çözebilir.
     """
@@ -91,13 +96,11 @@ def prune_underperformers(db: Session, *, enabled: bool = True, max_consecutive_
     pruned = []
     for w in tracked:
         st = wallet_copy_stats(db, w.address)
-        if st["closed_trades"] < min_closed_trades:
-            continue
         reason = None
         if max_consecutive_losses > 0 and st["consecutive_losses"] >= max_consecutive_losses:
             reason = f"{st['consecutive_losses']} ardışık zarar"
-        elif st["total_pnl_sol"] <= max_drawdown_sol:
-            reason = f"kümülatif kopya PnL {st['total_pnl_sol']} SOL (≤ {max_drawdown_sol})"
+        elif st["closed_trades"] >= min_closed_trades and st["win_rate"] < min_win_rate:
+            reason = f"başarı oranı %{round(st['win_rate']*100)} (< %{round(min_win_rate*100)}, {st['closed_trades']} işlem)"
         if reason:
             w.status = WalletStatus.blocked.value
             db.add(AuditLog(

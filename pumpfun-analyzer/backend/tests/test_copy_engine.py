@@ -15,7 +15,7 @@ def _ctx(**kw):
 
 
 def test_paper_buy_persisted(db):
-    cfg = RiskConfig(enabled=True, mode="paper", fixed_sol_amount=0.1, min_liquidity_sol=5)
+    cfg = RiskConfig(enabled=True, mode="paper", paper_trade_sol=0.1, min_liquidity_sol=5)
     eng = CopyTradeEngine(cfg)
     dec = eng.on_leader_buy(db, _ctx())
     assert dec.allowed is True

@@ -44,6 +44,7 @@ class TradeContext:
     market_price_sol: float
     leader_sol_amount: float | None = None
     source_signature: str | None = None
+    forced_sol_amount: float | None = None  # cüzdan-bazlı elle override / paper sabiti
 
 
 class CopyTradeEngine:
@@ -80,6 +81,7 @@ class CopyTradeEngine:
             token_sellable=ctx.token_sellable,
             follow_lag_seconds=ctx.follow_lag_seconds,
             leader_sol_amount=ctx.leader_sol_amount,
+            forced_amount=ctx.forced_sol_amount,
         )
         if not decision.allowed:
             logger.info("İşlem reddedildi: %s", "; ".join(decision.reasons))

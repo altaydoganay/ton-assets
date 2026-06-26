@@ -3,44 +3,95 @@
 @tailwind utilities;
 
 :root {
-  --bg: #f6f8fb;
-  --bg2: #eef2f7;
+  --bg: #f4f7fc;
+  --bg2: #eaf0f9;
   --card: #ffffff;
   --border: #e3e8ef;
-  --text: #0f172a;
+  --text: #0b1220;
   --muted: #64748b;
   --brand: #14b8a6;
   --brand2: #0ea5a4;
+  /* renk paleti — canlı, çok renkli panel */
+  --violet: #8b5cf6;
+  --pink: #ec4899;
+  --amber: #f59e0b;
+  --sky: #0ea5e9;
+  --emerald: #10b981;
+  --rose: #ef4444;
+  --glow: 0 10px 30px -12px rgba(20,184,166,0.25);
 }
 .dark {
-  --bg: #0a0e17;
-  --bg2: #0f1623;
-  --card: #121a28;
-  --border: #1e2937;
-  --text: #e6edf5;
+  --bg: #070b14;
+  --bg2: #0e1525;
+  --card: #111a2b;
+  --border: #1d2839;
+  --text: #e8eef7;
   --muted: #8a99ad;
   --brand: #2dd4bf;
   --brand2: #14b8a6;
+  --violet: #a78bfa;
+  --pink: #f472b6;
+  --amber: #fbbf24;
+  --sky: #38bdf8;
+  --emerald: #34d399;
+  --rose: #f87171;
+  --glow: 0 16px 40px -16px rgba(45,212,191,0.35);
 }
 
 * { border-color: var(--border); }
 body {
   background:
-    radial-gradient(900px 500px at 100% -10%, rgba(45,212,191,0.07), transparent 60%),
+    radial-gradient(1100px 600px at 92% -8%, rgba(139,92,246,0.10), transparent 55%),
+    radial-gradient(900px 500px at -5% 0%, rgba(45,212,191,0.10), transparent 55%),
+    radial-gradient(800px 500px at 50% 110%, rgba(14,165,233,0.08), transparent 60%),
     var(--bg);
   color: var(--text);
+  min-height: 100vh;
 }
 
 @layer components {
   .card {
-    @apply rounded-2xl border p-4 shadow-sm;
+    @apply rounded-2xl border p-4;
     background: var(--card);
     border-color: var(--border);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 24px -18px rgba(0,0,0,0.25);
   }
-  .card-hover { transition: transform .15s ease, border-color .15s ease; }
-  .card-hover:hover { transform: translateY(-2px); border-color: var(--brand); }
+  .card-hover { transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+  .card-hover:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--brand) 60%, var(--border)); box-shadow: var(--glow); }
   .muted { color: var(--muted); }
   .brand { color: var(--brand); }
+
+  /* canlı, çok renkli istatistik kartı */
+  .stat {
+    @apply relative overflow-hidden rounded-2xl border p-4;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--tone, var(--brand)) 9%, var(--card)), var(--card));
+    border-color: color-mix(in srgb, var(--tone, var(--brand)) 28%, var(--border));
+    transition: transform .18s ease, box-shadow .18s ease;
+  }
+  .stat:hover { transform: translateY(-3px); box-shadow: 0 18px 40px -20px color-mix(in srgb, var(--tone, var(--brand)) 60%, transparent); }
+  .stat::before {
+    content: ""; position: absolute; inset: 0 0 auto 0; height: 3px;
+    background: linear-gradient(90deg, var(--tone, var(--brand)), transparent);
+  }
+  .stat-ico {
+    @apply mb-2 grid h-9 w-9 place-items-center rounded-xl;
+    background: color-mix(in srgb, var(--tone, var(--brand)) 16%, transparent);
+    color: var(--tone, var(--brand));
+  }
+
+  .hero {
+    @apply relative overflow-hidden rounded-3xl border p-6;
+    background:
+      radial-gradient(700px 300px at 100% 0%, color-mix(in srgb, var(--violet) 22%, transparent), transparent 60%),
+      linear-gradient(120deg, color-mix(in srgb, var(--brand) 16%, var(--card)), var(--card) 70%);
+    border-color: color-mix(in srgb, var(--brand) 30%, var(--border));
+    box-shadow: var(--glow);
+  }
+  .gradient-text {
+    background: linear-gradient(90deg, var(--brand), var(--sky), var(--violet));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
 
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition;
@@ -50,12 +101,12 @@ body {
   .btn:disabled { opacity: .5; cursor: not-allowed; }
   .btn-primary {
     @apply inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-white transition;
-    background: linear-gradient(180deg, var(--brand), var(--brand2));
+    background: linear-gradient(120deg, var(--brand), var(--sky)); box-shadow: var(--glow);
   }
-  .btn-primary:hover { filter: brightness(1.07); }
+  .btn-primary:hover { filter: brightness(1.08); }
   .btn-danger {
     @apply inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-white transition;
-    background: linear-gradient(180deg, #ef4444, #dc2626);
+    background: linear-gradient(120deg, #f43f5e, #dc2626);
   }
   .btn-ghost { @apply inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition; color: var(--muted); }
   .btn-ghost:hover { color: var(--brand); }
@@ -65,13 +116,16 @@ body {
     color: var(--muted);
   }
   .nav-link:hover { background: rgba(45,212,191,0.08); color: var(--text); }
-  .nav-link.active { background: rgba(45,212,191,0.14); color: var(--brand); font-weight: 600; }
+  .nav-link.active {
+    background: linear-gradient(90deg, rgba(45,212,191,0.18), rgba(139,92,246,0.12));
+    color: var(--brand); font-weight: 600;
+  }
 
   .input {
     @apply w-full rounded-xl px-3 py-2 text-sm outline-none transition;
     background: var(--bg2); border: 1px solid var(--border); color: var(--text);
   }
-  .input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(45,212,191,0.12); }
+  .input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(45,212,191,0.14); }
 
   .badge { @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium; }
   .chip {
@@ -90,3 +144,4 @@ body {
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: var(--brand); }
