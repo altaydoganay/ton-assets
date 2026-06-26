@@ -227,6 +227,6 @@ def _confidence(perf: WalletPerformance) -> float:
     altına EZİLMEZ; ama az veri (eleme minimumu) hâlâ temkinli (≈0.4) kalır —
     yani ince örnekleme yüksek puan verilmez (veri yeterliliği ilkesi korunur).
     """
-    pos = min(1.0, perf.closed_positions / 16.0)
-    div = min(1.0, perf.token_diversity / 8.0)
+    pos = min(1.0, perf.closed_positions / 12.0)
+    div = min(1.0, perf.token_diversity / 6.0)
     return round(0.6 * pos + 0.4 * div, 3)

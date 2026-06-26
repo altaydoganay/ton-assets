@@ -39,11 +39,25 @@ const PROFILES = [
 export default function RiskSettings() {
   const { data, mutate } = useSWR<{ value: Risk }>("/settings/risk", fetcher);
   const [form, setForm] = useState<Risk | null>(null);
+  const [testResult, setTestResult] = useState<any>(null);
+  const [testing, setTesting] = useState(false);
   const toast = useToast();
   const { confirm, dialog } = useConfirm();
 
   useEffect(() => { if (data?.value) setForm(data.value); }, [data]);
   if (!form) return <Loading />;
+
+  async function runTest() {
+    setTesting(true); setTestResult(null);
+    try {
+      const r: any = await apiSend("/trading/test-run", "POST");
+      setTestResult(r);
+      if (r?.result?.traded) toast("success", "Test işlem AÇILDI ✓");
+      else if (r?.ok) toast("info", "Test çalıştı — sonucu aşağıda gör");
+      else toast("info", r?.reason || "Test sonucu aşağıda");
+    } catch (e: any) { toast("error", e?.message || "Test başarısız"); }
+    finally { setTesting(false); }
+  }
 
   function set(k: string, v: any) { setForm({ ...form, [k]: v }); }
 
@@ -83,9 +97,26 @@ export default function RiskSettings() {
       {dialog}
       <PageHeader title="Risk Ayarları" subtitle="Kopya işlem limitleri ve davranışı"
         action={<div className="flex gap-2">
+          <button className="btn" disabled={testing} onClick={runTest}>🧪 {testing ? "Çalışıyor…" : "Test İşlem Çalıştır"}</button>
           <button className="btn-danger" onClick={emergencyStop}>⛔ Acil Durdurma</button>
           <button className="btn-primary" onClick={save}><Save size={15} /> Kaydet</button>
         </div>} />
+
+      {testResult && (
+        <div className="mb-4"><Callout kind={testResult?.result?.traded ? "info" : "warn"}>
+          <b>Test sonucu:</b>{" "}
+          {testResult.ok === false ? (
+            <span>{testResult.reason}</span>
+          ) : testResult.result?.traded ? (
+            <span>✅ İŞLEM AÇILDI — cüzdan {String(testResult.wallet).slice(0, 4)}… → token {String(testResult.token).slice(0, 4)}… ·
+              token puanı {Math.round(testResult.result.token_score)} · kapı geçti. (İşlem Geçmişi'ne bak.)</span>
+          ) : (
+            <span>İşlem AÇILMADI. Sebep: <b>{testResult.result?.reason
+              || (testResult.result?.trade_blocked ? "motor: " + testResult.result.trade_blocked.join(", ") : "bilinmiyor")}</b>
+              {" "}· token puanı {Math.round(testResult.result?.token_score ?? 0)} · kapı {testResult.result?.token_ok ? "geçti" : "geçmedi"}.</span>
+          )}
+        </Callout></div>
+      )}
 
       {form.emergency_stop && <div className="mb-4"><Callout kind="warn">⛔ Acil durdurma şu an etkin. Yeni işlem yapılmaz. Tekrar açmak için "İşlem Motoru Aktif"i açıp kaydet.</Callout></div>}
 

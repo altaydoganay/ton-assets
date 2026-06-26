@@ -114,6 +114,24 @@ def test_poll_ignores_stale_buys_without_fetching(db):
     assert res["triggered"] == 0
 
 
+def test_diagnostic_trade_runs_synchronously(db):
+    """/trading/test-run mantığı: bir takip cüzdanının son alımını senkron işler
+    ve KARARI döner (worker'a gerek yok)."""
+    from app.services.wallet_watch import run_diagnostic_trade
+    db.query(Wallet).filter(Wallet.status == WalletStatus.tracked.value).delete(); db.commit()
+    w = Wallet(address="DiagLeader11111111111111111111111111111111",
+               status=WalletStatus.tracked.value, latest_score=85.0, risk_flags=[])
+    db.add(w); db.commit()
+    set_setting(db, "risk", {**_balanced_risk(), "min_wallet_score": 0}); reset_engine()
+    now = int(time.time())
+    chain = PollChain({"diag-buy-1": now - 60},
+                      {"diag-buy-1": _raw_buy(w.address, "DiagMint111111111111111111111111111111111", now - 60, "diag-buy-1")})
+    res = run_diagnostic_trade(db, chain, market=DecentMarket())
+    assert res["ok"] is True
+    assert res["result"]["action"] == "buy"
+    assert res["result"]["traded"] is True
+
+
 def test_poll_task_writes_panel_heartbeat(db):
     """Poll görevi durumunu Loglar'a (AuditLog category=watch) yazar; 20 dk throttle."""
     from app.models import AuditLog

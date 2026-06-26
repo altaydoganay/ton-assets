@@ -37,8 +37,11 @@ DEFAULTS: dict[str, dict] = {
         "max_daily_loss_sol": 0.5,
         "max_slippage": 0.15,
         "priority_fee_sol": 0.0005,
-        "min_wallet_score": 70.0,
-        "min_token_score": 70.0,   # yalnızca token_gate="score" modunda uygulanır
+        # Motor skor eşikleri: TAKİP kararı (status==tracked) zaten kaliteyi
+        # belirlediğinden motorda ek skor engeli UYGULAMAYIZ (0 = engel yok).
+        # Token kalitesini "token_gate" yönetir; cüzdan kalitesini takip listesi.
+        "min_wallet_score": 0.0,
+        "min_token_score": 0.0,    # yalnızca token_gate="score" modunda uygulanır
         "max_open_positions_per_token": 1,
         "max_follow_lag_seconds": 60,
         "min_liquidity_sol": 5.0,  # yalnızca ölçülebildiğinde uygulanır
@@ -127,6 +130,21 @@ def seed_defaults(db: Session) -> None:
             risk["max_daily_spend_sol"] = 1.0
         set_setting(db, "risk", risk)
         set_setting(db, "_meta_risk_policy_v5", {"applied": True})
+
+    # v6: İŞLEM-DOSTU hizalama. Takip kararı + safety vetosu zaten kaliteyi
+    # belirlediğinden motordaki SKOR engellerini kaldırır (tracked cüzdanın 65-70
+    # bandındaki puanı işlemi engellemesin). enabled=paper açık tutulur; CANLI'ya
+    # dokunulmaz. Yüksek-frekans/küçük-kâr stratejisine uygundur.
+    if not db.query(Setting).filter(Setting.key == "_meta_risk_policy_v6").first():
+        risk = get_setting(db, "risk")
+        risk["token_gate"] = risk.get("token_gate", "safety") or "safety"
+        risk["min_wallet_score"] = 0.0
+        risk["min_token_score"] = 0.0
+        if not risk.get("live_confirmed"):
+            risk["enabled"] = True
+            risk["mode"] = "paper"
+        set_setting(db, "risk", risk)
+        set_setting(db, "_meta_risk_policy_v6", {"applied": True})
 
 
 def all_settings(db: Session) -> dict[str, dict]:

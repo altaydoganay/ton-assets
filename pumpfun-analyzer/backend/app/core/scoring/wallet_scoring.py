@@ -37,8 +37,8 @@ DEFAULT_WEIGHTS = {
 # TUTARLI trader'ları geçirip tek-atışlık/rug cüzdanları elemeye dengelenmiştir.
 # Tümü panelden değiştirilebilir (API ve RPC Ayarları).
 DEFAULT_ELIGIBILITY = {
-    "min_closed_positions": 8,
-    "min_distinct_tokens": 4,
+    "min_closed_positions": 6,
+    "min_distinct_tokens": 3,
     "min_history_days": 1.0,
     # Kârlı pump.fun trader'ları çoğu zaman %40-50 isabetle ama yüksek profit
     # factor ile kazanır; %55 eşiği bu profilleri sessizce eliyordu. Kaliteyi

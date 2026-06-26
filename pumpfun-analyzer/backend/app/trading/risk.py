@@ -47,6 +47,18 @@ class DayState:
     spent_sol: float = 0.0
     loss_sol: float = 0.0
     open_positions: dict[str, int] = field(default_factory=dict)  # token -> adet
+    date: str = ""  # YYYY-MM-DD (UTC) — gün değişince harcama/zarar SIFIRLANIR
+
+    def roll_day(self) -> None:
+        """Yeni güne geçildiyse günlük harcama/zarar sayaçlarını sıfırla.
+        (Açık pozisyonlar korunur.) Aksi halde 'günlük' limit aslında 'süreç-ömrü'
+        limiti gibi davranıp bir kez dolunca işlemleri kalıcı durduruyordu."""
+        from datetime import datetime, timezone
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if self.date != today:
+            self.spent_sol = 0.0
+            self.loss_sol = 0.0
+            self.date = today
 
 
 @dataclass
@@ -85,6 +97,7 @@ def evaluate_buy(
     leader_sol_amount: float | None = None,
 ) -> RiskDecision:
     reasons: list[str] = []
+    day.roll_day()  # gün değiştiyse günlük sayaçları sıfırla
 
     if cfg.emergency_stop:
         return RiskDecision(False, ["Acil durdurma aktif"])

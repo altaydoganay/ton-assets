@@ -110,6 +110,20 @@ def emergency_stop(close_positions: bool = False, db: Session = Depends(get_db))
             "detail": "Yeni işlemler durduruldu" + (" ve açık pozisyonlar kapatılacak" if close_positions else "")}
 
 
+@trading_router.post("/test-run")
+def test_run(db: Session = Depends(get_db)):
+    """ANINDA teşhis: bir takip cüzdanının en son alımını senkron işler ve kararı
+    döner (işlem açıldı mı / hangi sebeple açılmadı). Worker/beat çalışmasa bile
+    backend'den çalışır — 'neden 0 işlem' sorusunu tek tıkla yanıtlar."""
+    from ..adapters.registry import build_chain_provider, build_market_provider
+    from ..services.wallet_watch import run_diagnostic_trade
+    try:
+        chain = build_chain_provider(throttle=False)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(503, f"Zincir sağlayıcı kurulamadı: {exc}")
+    return run_diagnostic_trade(db, chain, market=build_market_provider())
+
+
 # --- Ayarlar ---
 @settings_router.get("")
 def get_all_settings(db: Session = Depends(get_db)):

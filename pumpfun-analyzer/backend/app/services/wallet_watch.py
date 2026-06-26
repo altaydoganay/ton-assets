@@ -115,3 +115,54 @@ def poll_tracked_wallets(
                 len(tracked), fresh_txns, triggered, dict(reasons.most_common(5)))
     return {"polled": len(tracked), "fresh_buys": fresh_txns, "triggered": triggered,
             "reasons": dict(reasons.most_common(5))}
+
+
+def run_diagnostic_trade(db: Session, chain: ChainProvider,
+                         market: MarketProvider | None = None) -> dict:
+    """Bir takip cüzdanının EN SON alımını SENKRON işler ve KARARI döner.
+
+    Worker/beat çalışmasa bile panelden ANINDA sonuç verir: işlem açıldı mı, yoksa
+    hangi sebeple açılmadı (veto / motor / hata). Teşhis amaçlı — gerçek paper
+    işlem açılabilir (risksiz). Alert dedup'ı atlanır ki karar her zaman görünsün."""
+    import time as _t
+    from .live_flow import handle_trade_event as _hte
+
+    tracked = (db.query(Wallet).filter(Wallet.status == WalletStatus.tracked.value)
+               .order_by(Wallet.latest_score.desc()).all())
+    if not tracked:
+        return {"ok": False, "reason": "Takip edilen cüzdan yok."}
+    now = _t.time()
+    checked = 0
+    for w in tracked:
+        try:
+            sigs = chain.get_signatures_for_address(w.address, limit=10)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "reason": f"İmza alınamadı: {type(exc).__name__}: {exc}"}
+        for s in sigs or []:
+            sig = s.get("signature") if isinstance(s, dict) else s
+            bt = s.get("blockTime") if isinstance(s, dict) else None
+            if not sig:
+                continue
+            checked += 1
+            try:
+                raw = chain.get_transaction(sig)
+            except Exception:  # noqa: BLE001
+                continue
+            ntx = normalize_rpc_transaction(raw) if raw else None
+            if ntx is None:
+                continue
+            swap = detect_swap(ntx, w.address)
+            if swap is None or swap.side != "buy":
+                continue
+            trade = PumpPortalTrade(
+                signature="TEST-" + (swap.signature or sig), trader=w.address,
+                mint=swap.token_mint, side="buy", sol_amount=swap.sol_amount,
+                token_amount=swap.token_amount, pool=swap.venue, market_cap_sol=None, raw={},
+            )
+            res = _hte(db, trade, chain=chain, market=market)
+            age_min = (now - swap.block_time) / 60.0 if swap.block_time else None
+            return {"ok": True, "wallet": w.address, "wallet_score": w.latest_score,
+                    "token": swap.token_mint, "buy_age_min": round(age_min, 1) if age_min else None,
+                    "result": res}
+    return {"ok": False, "reason": f"Son işlemlerde ALIM bulunamadı ({checked} imza tarandı). "
+                                   f"Cüzdanlar şu an satış/transfer yapıyor olabilir."}

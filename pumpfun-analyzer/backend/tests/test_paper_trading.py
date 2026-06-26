@@ -59,8 +59,10 @@ def test_risk_allows_when_paper_enabled():
 
 
 def test_risk_daily_spend_limit():
+    from datetime import datetime, timezone
     cfg = RiskConfig(enabled=True, mode="paper", fixed_sol_amount=1.0, max_position_sol=1.0, max_daily_spend_sol=1.5)
-    day = DayState(spent_sol=1.0)
+    # AYNI gün içinde birikmiş harcama (gün değişimi sıfırlamasın diye date=bugün)
+    day = DayState(spent_sol=1.0, date=datetime.now(timezone.utc).strftime("%Y-%m-%d"))
     dec = evaluate_buy(cfg, day, wallet_address="W", token_mint="T",
                        wallet_score=90, token_score=90, token_liquidity_sol=100,
                        token_sellable=True, follow_lag_seconds=5)
