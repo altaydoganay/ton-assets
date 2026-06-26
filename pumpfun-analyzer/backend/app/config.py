@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     app_name: str = "Pump.fun Cüzdan Analizcisi"
     # SÜRÜM/BUILD numarası — her anlamlı güncellemede artar. Panelin üst barında
     # ve /health'te gösterilir; deploy'un doğru kodu aldığını buradan doğrularsın.
-    app_build: str = "21"
-    app_build_label: str = "cüzdan sıralaması + token performansı + canlı kurulum + saf kopya + animasyonlar"
+    app_build: str = "22"
+    app_build_label: str = "geniş cüzdan ağı + pozisyon kurtarma + devre kesici + geç-giriş koruması"
     environment: Literal["development", "production", "test"] = "development"
     api_prefix: str = "/api"
     secret_key: str = Field(default="degistir-bu-anahtari", description="Uygulama imza anahtarı")
@@ -100,23 +100,26 @@ class Settings(BaseSettings):
     # 2 = ÜCRETSİZ ön filtre: tek bir tokeni alıp kaybolan snipe/bot'lar yerine
     # birden çok farklı tokende görülen (tutarlılık sinyali) cüzdanları aday yapar.
     # Böylece kredi yalnızca daha umut vadeden cüzdanların analizine harcanır.
-    discovery_min_token_hits: int = 2
+    # GENİŞ AĞ (paper aşaması): 1 = her alıcıyı aday yap (daha çok cüzdan; kaliteyi
+    # otomatik eleme + kopya performansı temizler). Canlıya geçerken 2'ye çıkarılabilir.
+    discovery_min_token_hits: int = 1
     # Aynı anda izlenen (trade aboneliği açık) maksimum token sayısı
     discovery_max_watched_tokens: int = 120
-    # Her arka plan döngüsünde analiz edilecek aday sayısı.
-    discovery_batch_size: int = 3
+    # Her arka plan döngüsünde analiz edilecek aday sayısı (geniş ağ için yüksek).
+    discovery_batch_size: int = 8
     # Aday analizinde taranacak işlem sayısı (DERİNLİK). Helius Enhanced
     # Transactions ile 100'er işlem TEK istekte gelir; bu yüzden derin geçmiş
     # (150) ucuzdur ve "8 kapalı pozisyon / 4 farklı token" eleme kriterlerinin
     # gerçek trader'larca karşılanabilmesi için derinlik şarttır. RPC fallback'te
     # bu değer imza-başına çağrı demektir (Helius dışı sağlayıcıda küçült).
     discovery_ingest_limit: int = 150
-    # Aday analiz döngüsü aralığı (saniye) — Celery beat
-    discovery_interval_seconds: int = 180
-    # Helius keşfinde dakikada en fazla kaç işlem detayı çekilsin. Büyük backlog
-    # varken düşük tut (yeni keşfe değil, mevcut havuzu analize odaklan).
+    # Aday analiz döngüsü aralığı (saniye) — Celery beat. Geniş ağ için sık tara.
+    discovery_interval_seconds: int = 120
+    # Helius keşfinde dakikada en fazla kaç işlem detayı çekilsin. Geniş ağ
+    # (paper aşaması) için yüksek: daha çok cüzdan keşfet/analiz et. Canlıya
+    # geçerken bütçeyi korumak için düşürülebilir.
     # Bu, keşif `getTransaction` kredisinin ana kalemidir; bütçeye göre ayarla.
-    discovery_max_lookups_per_min: int = 6
+    discovery_max_lookups_per_min: int = 20
 
     # --- Takip edilen cüzdan izleme (poll) ---
     # Canlı WS dinleyicisi olay kaçırabildiğinden, takip edilen cüzdanların taze
@@ -126,6 +129,9 @@ class Settings(BaseSettings):
     tracked_poll_seconds: int = 60            # poll döngü aralığı (sn)
     tracked_poll_per_wallet: int = 6          # her cüzdandan çekilecek son imza sayısı
     tracked_poll_fresh_seconds: int = 900     # yalnızca son N sn içindeki alımlar işlenir
+    # Bir poll döngüsünde en fazla kaç takip cüzdanı taransın. Geniş ağda yüzlerce
+    # cüzdan olabilir; en yüksek puanlılar önce taranır (öncelik). Bütçe koruması.
+    tracked_poll_max_wallets: int = 150
 
     # --- Eşikler (varsayılan; veritabanındaki settings tablosu önceliklidir) ---
     min_wallet_score: float = 70.0

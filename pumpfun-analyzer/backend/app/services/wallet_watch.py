@@ -44,15 +44,25 @@ def poll_tracked_wallets(
     signer: PumpPortalTrader | None = None,
     per_wallet: int = 6,
     fresh_seconds: int = 900,
+    max_wallets: int = 150,
 ) -> dict:
     """Takip edilen cüzdanların taze alımlarını işleme hattına yönlendirir (ucuz).
 
     Dedup YALNIZCA Alert.signature ile yapılır (gerçek işlem/bildirim oluştuysa
     çift işlem olmaz). Reddedilen (vetolu/motor-bloklu) taze alımlar taze penceresi
     boyunca her döngüde yeniden DEĞERLENDİRİLİR — böylece ret SEBEBİ her zaman
-    görünür kalır (Redis dedup'ı sebebi gizliyordu)."""
+    görünür kalır (Redis dedup'ı sebebi gizliyordu).
+
+    Geniş ağda yüzlerce takip cüzdanı olabilir; bütçe için döngü başına en fazla
+    `max_wallets` cüzdan taranır — en yüksek puanlılar ÖNCE (öncelik)."""
     from collections import Counter
-    tracked = db.query(Wallet).filter(Wallet.status == WalletStatus.tracked.value).all()
+    tracked = (
+        db.query(Wallet)
+        .filter(Wallet.status == WalletStatus.tracked.value)
+        .order_by(Wallet.latest_score.desc().nullslast())
+        .limit(max_wallets)
+        .all()
+    )
     now = time.time()
     fresh_txns = 0   # taze + yeni (getTransaction çekilen) işlem sayısı
     triggered = 0    # açılan ALIM sayısı
@@ -115,7 +125,8 @@ def poll_tracked_wallets(
             )
             try:
                 res = handle_trade_event(db, trade, chain=chain, market=market,
-                                         notifier=notifier, signer=signer)
+                                         notifier=notifier, signer=signer,
+                                         block_time=swap.block_time)
                 act = res.get("action")
                 if act == "buy" and res.get("traded"):
                     triggered += 1  # gerçekten paper/canlı ALIM açıldı

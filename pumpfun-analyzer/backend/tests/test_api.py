@@ -22,7 +22,7 @@ def test_settings_roundtrip(db):
     seed_defaults(db)
     r = client.get("/api/settings/thresholds")
     assert r.status_code == 200
-    assert r.json()["value"]["wallet"] == 65.0  # v7: geniş al (eşik 65) + otomatik eleme
+    assert r.json()["value"]["wallet"] == 55.0  # v8: geniş ağ (eşik 55) + otomatik eleme
 
     r = client.put("/api/settings/thresholds", json={"value": {"wallet": 75.0, "token": 72.0}})
     assert r.status_code == 200

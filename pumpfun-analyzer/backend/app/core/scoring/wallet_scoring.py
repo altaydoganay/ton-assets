@@ -37,14 +37,17 @@ DEFAULT_WEIGHTS = {
 # TUTARLI trader'ları geçirip tek-atışlık/rug cüzdanları elemeye dengelenmiştir.
 # Tümü panelden değiştirilebilir (API ve RPC Ayarları).
 DEFAULT_ELIGIBILITY = {
-    "min_closed_positions": 6,
-    "min_distinct_tokens": 3,
-    "min_history_days": 1.0,
+    # GENİŞ AĞ (paper aşaması): daha az geçmişle aday kabul et — filtrelerimize
+    # takılan ama kâr eden cüzdanları da takibe alıp kopya performansıyla ölç.
+    # Canlıya geçerken bu kriterler sıkılaştırılabilir.
+    "min_closed_positions": 4,
+    "min_distinct_tokens": 2,
+    "min_history_days": 0.5,
     # Kârlı pump.fun trader'ları çoğu zaman %40-50 isabetle ama yüksek profit
-    # factor ile kazanır; %55 eşiği bu profilleri sessizce eliyordu. Kaliteyi
-    # win-rate değil; profit factor + organik/sniper/veto + toplam puan (≥70)
-    # belirler. Win-rate yalnızca tam tersine (rug/tek-atış) karşı taban filtre.
-    "min_win_rate": 0.45,
+    # factor ile kazanır; yüksek eşik bu profilleri sessizce eliyordu. Kaliteyi
+    # win-rate değil; profit factor + organik/sniper/veto + toplam puan belirler.
+    # Win-rate yalnızca tam tersine (rug/tek-atış) karşı taban filtre.
+    "min_win_rate": 0.40,
     "min_median_hold_seconds": 180,    # 3 dk (pump.fun hızlı; sniper saniyeler içinde flip eder)
     "max_short_hold_ratio": 0.70,      # <10 dk kapanışlar
     "max_single_trade_pnl_share": 0.75,

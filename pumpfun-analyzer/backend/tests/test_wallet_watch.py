@@ -93,12 +93,19 @@ def _reset():
 
 
 def _balanced_risk():
+    # max_follow_lag_seconds geniş: bu testler İŞLEM TETİKLEMEYİ doğrular, geç-giriş
+    # korumasını değil (taze alımlar now-60 olduğundan dar lag eşiği gölgelerdi).
     return {"enabled": True, "mode": "paper", "token_gate": "balanced",
             "fixed_sol_amount": 0.05, "max_position_sol": 0.2, "max_daily_spend_sol": 1.0,
-            "min_liquidity_sol": 5, "min_wallet_score": 65, "min_token_score": 70}
+            "min_liquidity_sol": 5, "min_wallet_score": 65, "min_token_score": 70,
+            "max_follow_lag_seconds": 900}
 
 
 def test_poll_triggers_trade_on_fresh_buy_and_dedups(db):
+    # Restart-kurtarma (hydrate_from_db) açık pozisyonları PaperTrade'den yeniden
+    # kurduğundan, başka testlerden kalan MINT pozisyonu bu alımı (token başına
+    # max açık pozisyon) engellemesin diye temiz başla.
+    db.query(PaperTrade).delete(); db.commit()
     w = Wallet(address=WALLET, status=WalletStatus.tracked.value, latest_score=85.0, risk_flags=[])
     db.add(w); db.commit()
     set_setting(db, "risk", _balanced_risk()); reset_engine()

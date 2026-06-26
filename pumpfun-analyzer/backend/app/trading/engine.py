@@ -56,6 +56,65 @@ class CopyTradeEngine:
         self.signer = signer  # canlı imzalayıcı (enjekte edilir); yoksa live engellenir
         self.day = DayState()
 
+    def hydrate_from_db(self, db: Session) -> dict:
+        """Worker yeniden başladığında bellek-içi durumu DB'den yeniden kurar.
+
+        İki sorunu çözer:
+          1) AÇIK POZİSYON KURTARMA: paper pozisyonları (qty/maliyet) açık
+             alımlardan yeniden kurulur — yoksa restart sonrası lider satınca
+             yansıtma çalışmaz ve açık pozisyonlar yetim kalırdı.
+          2) DEVRE KESİCİ DAYANIKLILIĞI: bugünkü harcama/zarar sayaçları DB'den
+             doldurulur — yoksa restart günlük zarar limitini (devre kesici)
+             sıfırlayıp koruma penceresini açık bırakırdı.
+
+        Yalnızca PAPER trades üzerinden kurar (canlı pozisyonlar ayrı yönetilir).
+        """
+        from datetime import datetime, timezone
+
+        self.paper.positions.clear()
+        rows = db.query(PaperTrade).order_by(PaperTrade.created_at.asc()).all()
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        def _is_today(created) -> bool:
+            if not created:
+                return False
+            dt = created.astimezone(timezone.utc) if created.tzinfo else created
+            return dt.strftime("%Y-%m-%d") == today
+
+        agg: dict[str, list[float]] = {}  # mint -> [bought_qty, bought_cost, sold_qty]
+        spent_today = 0.0
+        loss_today = 0.0
+        for r in rows:
+            a = agg.setdefault(r.token_mint, [0.0, 0.0, 0.0])
+            is_today = _is_today(getattr(r, "created_at", None))
+            if r.side == "buy":
+                a[0] += r.token_amount or 0.0
+                a[1] += r.sol_amount or 0.0
+                if is_today:
+                    spent_today += r.sol_amount or 0.0
+            else:
+                a[2] += r.token_amount or 0.0
+                if is_today and (r.realized_pnl_sol or 0.0) < 0:
+                    loss_today += abs(r.realized_pnl_sol or 0.0)
+
+        recovered = 0
+        open_positions: dict[str, int] = {}
+        for mint, (bq, bc, sq) in agg.items():
+            rem = bq - sq
+            if rem > 1e-9 and bq > 1e-12:
+                pos = self.paper._pos(mint)
+                pos.qty = rem
+                pos.cost_sol = bc * (rem / bq)  # ortalama-maliyet yaklaşımı
+                open_positions[mint] = 1
+                recovered += 1
+
+        self.day.date = today
+        self.day.spent_sol = round(spent_today, 9)
+        self.day.loss_sol = round(loss_today, 9)
+        self.day.open_positions = open_positions
+        return {"recovered_positions": recovered, "spent_today": self.day.spent_sol,
+                "loss_today": self.day.loss_sol}
+
     def _recheck_safety(self, ctx: TradeContext) -> list[str]:
         """İşlem göndermeden hemen önce son güvenlik kontrolü (kapı politikasına
         duyarlı; "safety" modunda token puanı engel değildir)."""

@@ -90,6 +90,17 @@ def get_engine(db: Session, signer=None) -> CopyTradeEngine:
     reset_token = (get_setting(db, "paper_reset") or {}).get("token")
     if _engine is None or reset_token != _engine_reset_token:
         _engine = CopyTradeEngine(cfg, signer=signer)
+        # Worker yeniden başladıysa açık PAPER pozisyonları + bugünkü harcama/zarar
+        # (devre kesici) sayaçlarını DB'den kurtar — yetim pozisyon ve sıfırlanan
+        # zarar limiti olmasın. Yalnızca paper modunda (canlı pozisyonlar LiveTrade
+        # üzerinden ayrı yönetilir; paper geçmişiyle karıştırılmaz).
+        if cfg.mode == "paper":
+            try:
+                stats = _engine.hydrate_from_db(db)
+                if stats.get("recovered_positions"):
+                    logger.info("Paper motoru DB'den kurtarıldı: %s", stats)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Paper pozisyon kurtarma başarısız: %s", exc)
         _engine_reset_token = reset_token
     else:
         _engine.cfg = cfg  # günlük harcama/zarar ve paper pozisyonları korunur
@@ -121,9 +132,15 @@ def handle_trade_event(
     market: MarketProvider | None = None,
     notifier: TelegramNotifier | None = None,
     signer: PumpPortalTrader | None = None,
+    block_time: int | None = None,
 ) -> dict:
-    """Bir PumpPortal trade olayını uçtan uca işler. Sonuç özetini döner."""
+    """Bir PumpPortal trade olayını uçtan uca işler. Sonuç özetini döner.
+
+    `block_time` verilirse (poll yolu) liderin alımından bu yana geçen GERÇEK
+    süre (follow_lag) hesaplanır ve geç-giriş koruması uygulanır; canlı WS
+    yolunda olay gerçek-zamanlı geldiğinden lag ≈ 0'dır."""
     now = int(datetime.now(timezone.utc).timestamp())
+    follow_lag = max(0.0, float(now - block_time)) if block_time else 0.0
     # Canlı alım yolu: throttle KAPALI (düşük gecikme).
     chain = chain or build_chain_provider(throttle=False)
     market = market or build_market_provider()
@@ -200,6 +217,7 @@ def handle_trade_event(
         # tamamı varsayımıyla yansıtırız (FULL); kısmi oran ileride event'ten gelebilir.
         engine = get_engine(db, signer=signer)
         ctx = _ctx(trade, wallet, assessment.total, assessment.vetoed, market_price_sol, liquidity_sol)
+        # Satışta gecikme koruması UYGULANMAZ: lider sattıysa biz de hemen çıkmalıyız.
         engine.on_leader_sell(db, ctx, leader_sell_fraction=1.0)
         summary["action"] = "mirror_sell"
         return summary
@@ -236,7 +254,7 @@ def handle_trade_event(
         # Cüzdan-bazlı elle SOL override (varsa) — paper sabitini de geçersiz kılar
         override = get_setting(db, "copy_overrides").get(trade.trader)
         ctx = _ctx(trade, wallet, assessment.total, assessment.vetoed, market_price_sol, liquidity_sol,
-                   forced=float(override) if override else None)
+                   forced=float(override) if override else None, follow_lag=follow_lag)
         try:
             decision = engine.on_leader_buy(db, ctx)
             if alert and decision and decision.allowed:
@@ -270,7 +288,8 @@ def handle_trade_event(
 
 
 def _ctx(trade: PumpPortalTrade, wallet: Wallet, token_total: float, token_vetoed: bool,
-         price_sol: float, liquidity_sol: float, forced: float | None = None) -> TradeContext:
+         price_sol: float, liquidity_sol: float, forced: float | None = None,
+         follow_lag: float = 0.0) -> TradeContext:
     return TradeContext(
         wallet_address=trade.trader,
         token_mint=trade.mint,
@@ -278,7 +297,7 @@ def _ctx(trade: PumpPortalTrade, wallet: Wallet, token_total: float, token_vetoe
         token_score=token_total,
         token_liquidity_sol=liquidity_sol,
         token_sellable=not token_vetoed,
-        follow_lag_seconds=0.0,
+        follow_lag_seconds=follow_lag,
         market_price_sol=price_sol,
         leader_sol_amount=trade.sol_amount,
         source_signature=trade.signature,

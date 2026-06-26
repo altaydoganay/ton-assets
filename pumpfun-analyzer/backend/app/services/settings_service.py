@@ -15,7 +15,7 @@ DEFAULTS: dict[str, dict] = {
     "wallet_weights": WALLET_WEIGHTS,
     "wallet_eligibility": DEFAULT_ELIGIBILITY,
     "token_weights": TOKEN_WEIGHTS,
-    "thresholds": {"wallet": 65.0, "token": 70.0},  # cüzdan eşiği düşük: geniş al + eleme temizler
+    "thresholds": {"wallet": 55.0, "token": 70.0},  # cüzdan eşiği DÜŞÜK (geniş ağ): geniş al + kopya-performansı eler
     "risk": {
         # Paper (simülasyon) işlem motoru varsayılan AÇIK — risksizdir; CANLI
         # (gerçek para) ayrı bir onaya bağlıdır (live_confirmed) ve KAPALI kalır.
@@ -43,7 +43,11 @@ DEFAULTS: dict[str, dict] = {
         "min_wallet_score": 0.0,
         "min_token_score": 0.0,    # yalnızca token_gate="score" modunda uygulanır
         "max_open_positions_per_token": 1,
-        "max_follow_lag_seconds": 60,
+        # GEÇ-GİRİŞ KORUMASI: lider alımından bu kadar saniyeden FAZLA geçtiyse
+        # kopya alım yapma (fiyat çoktan pompalanmış olabilir = tepeden alım riski).
+        # Poll yolu liderin alımından bu yana geçen GERÇEK süreyi ölçer. 600sn (10dk)
+        # = poll penceresinde normal gecikmeye izin verir, bayat girişleri eler.
+        "max_follow_lag_seconds": 600,
         "min_liquidity_sol": 5.0,  # yalnızca ölçülebildiğinde uygulanır
         "emergency_stop": False,
         "blocked_wallets": [],
@@ -188,6 +192,23 @@ def seed_defaults(db: Session) -> None:
         risk.pop("copy_max_drawdown_sol", None)  # SOL miktarına göre yargılama kaldırıldı
         set_setting(db, "risk", risk)
         set_setting(db, "_meta_risk_policy_v7", {"applied": True})
+
+    # v8: GENİŞ AĞ — paper aşamasında çok daha fazla cüzdan takip et. Takip eşiği
+    # 65->55 (filtrelerimize takılan ama kâr eden cüzdanları da görüp kopya
+    # performansıyla elememiz için). Canlıya geçilmediğinden risk yok; kaybedenleri
+    # otomatik eleme + manuel inceleme temizler. CANLI'ya (live_confirmed) dokunulmaz.
+    if not db.query(Setting).filter(Setting.key == "_meta_risk_policy_v8").first():
+        th = get_setting(db, "thresholds")
+        if float(th.get("wallet", 65.0)) >= 60.0:
+            th["wallet"] = 55.0
+            set_setting(db, "thresholds", th)
+        # Geç-giriş koruması artık GERÇEK lag ölçüyor; eski 60sn poll alımlarını
+        # boğardı — poll penceresine uygun 600sn'ye yükselt (panelden değişebilir).
+        risk = get_setting(db, "risk")
+        if int(risk.get("max_follow_lag_seconds", 60)) <= 120:
+            risk["max_follow_lag_seconds"] = 600
+            set_setting(db, "risk", risk)
+        set_setting(db, "_meta_risk_policy_v8", {"applied": True})
 
 
 def all_settings(db: Session) -> dict[str, dict]:

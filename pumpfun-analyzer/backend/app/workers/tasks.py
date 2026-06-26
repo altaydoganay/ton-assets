@@ -210,6 +210,7 @@ def poll_tracked_wallets() -> dict:
             db, chain, market=build_market_provider(), signer=signer,
             per_wallet=int(settings.tracked_poll_per_wallet),
             fresh_seconds=fresh,
+            max_wallets=int(settings.tracked_poll_max_wallets),
         )
         # Panelde (Loglar) GÖRÜNÜR durum: aktivite varsa hemen yaz; aktivite yoksa
         # en çok ~20 dk'da bir "nabız" yaz (Loglar'ı boğmadan izleyici canlı mı,
