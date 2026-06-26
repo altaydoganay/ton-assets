@@ -25,6 +25,17 @@ def test_dedup_key_stable():
     k1 = make_dedup_key("s", "w", "t")
     k2 = make_dedup_key("s", "w", "t")
     assert k1 == k2
+    assert make_dedup_key("s", "w", "t") != make_dedup_key("s2", "w", "t")
+
+
+def test_dedup_key_fits_alerts_column():
+    """Regresyon: gerçekçi uzun imza+adresler alerts.dedup_key (varchar 160) için
+    TAŞMAMALI. Düz metin ~178 idi ve her alert insert'ini çökertip 0 işleme yol
+    açıyordu; özet (hash) sabit 64 karakter."""
+    sig = "5" * 88  # Solana base58 imza ~88
+    wallet = "A" * 44
+    token = "B" * 44
+    assert len(make_dedup_key(sig, wallet, token)) <= 160
 
 
 def test_notify_dedup(db):
