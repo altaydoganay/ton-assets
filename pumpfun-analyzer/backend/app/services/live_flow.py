@@ -185,12 +185,12 @@ def handle_trade_event(
     # ALIM
     if not token_ok:
         summary["action"] = "skipped"
+        # Sebep özetin içinde döner; izleyici nabzı bunu her döngüde gösterir.
+        # (Burada AYRI bir "Atlandı" denetim kaydı YAZMAYIZ — yeniden değerlendirme
+        # nedeniyle Loglar'ı boğmamak için.)
         reason = ("güvenlik vetosu: " + ", ".join(assessment.veto_reasons)) if assessment.vetoed \
             else f"token puanı {assessment.total:.0f} < kapı eşiği ({token_gate})"
         summary["reason"] = reason
-        _audit(db, "info", f"Atlandı — {short_addr(trade.trader)} → {short_addr(trade.mint)}: {reason}",
-               {"wallet": trade.trader, "token": trade.mint, "wallet_score": wallet.latest_score,
-                "token_score": assessment.total, "gate": token_gate, "signature": trade.signature})
         return summary
 
     # 4) Telegram bildirimi (dedup'lı) — işlemden bağımsız

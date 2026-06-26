@@ -42,11 +42,14 @@ def poll_tracked_wallets(
     signer: PumpPortalTrader | None = None,
     per_wallet: int = 6,
     fresh_seconds: int = 900,
-    should_process=None,
 ) -> dict:
-    """Takip edilen cüzdanların taze alımlarını işleme hattına yönlendirir (ucuz)."""
+    """Takip edilen cüzdanların taze alımlarını işleme hattına yönlendirir (ucuz).
+
+    Dedup YALNIZCA Alert.signature ile yapılır (gerçek işlem/bildirim oluştuysa
+    çift işlem olmaz). Reddedilen (vetolu/motor-bloklu) taze alımlar taze penceresi
+    boyunca her döngüde yeniden DEĞERLENDİRİLİR — böylece ret SEBEBİ her zaman
+    görünür kalır (Redis dedup'ı sebebi gizliyordu)."""
     from collections import Counter
-    should_process = should_process or (lambda _sig: True)
     tracked = db.query(Wallet).filter(Wallet.status == WalletStatus.tracked.value).all()
     now = time.time()
     fresh_txns = 0   # taze + yeni (getTransaction çekilen) işlem sayısı
@@ -67,13 +70,11 @@ def poll_tracked_wallets(
             # TAZELİK filtresi imza listesinden (getTransaction'a GİTMEDEN) — kredi koruması
             if block_time is not None and (now - block_time) > fresh_seconds:
                 continue
-            # dedup: zaten işlenmişse getTransaction'a hiç gitme
+            # dedup: gerçek işlem/bildirim oluştuysa (Alert) tekrar işleme — çift yok
             if db.query(Alert).filter(Alert.signature == sig).first():
                 continue
-            if not should_process(sig):
-                continue
             try:
-                raw = chain.get_transaction(sig)  # ~1 kredi (yalnızca taze+yeni için)
+                raw = chain.get_transaction(sig)  # ~1 kredi (yalnızca taze+Alert'siz için)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("[WATCH] getTransaction hatası %s: %s", sig[:8], exc)
                 continue

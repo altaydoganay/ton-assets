@@ -193,23 +193,7 @@ def poll_tracked_wallets() -> dict:
       with _singleton("poll_tracked_wallets", ttl=120) as got:
         if not got:
             return {"skipped": "locked"}
-        # Redis TTL ile imza dedup (kaçıran/çift işlemeyi önler)
-        r = None
-        try:
-            import redis as _redis
-            r = _redis.from_url(settings.redis_url, socket_connect_timeout=2)
-        except Exception:  # noqa: BLE001
-            r = None
         fresh = int(settings.tracked_poll_fresh_seconds)
-
-        def _should(sig: str) -> bool:
-            if r is None:
-                return True
-            try:
-                return bool(r.set(f"watch:{sig}", "1", nx=True, ex=fresh + 120))
-            except Exception:  # noqa: BLE001
-                return True
-
         try:
             chain = build_chain_provider(throttle=False)
         except Exception as exc:  # noqa: BLE001
@@ -225,7 +209,7 @@ def poll_tracked_wallets() -> dict:
         result = _poll(
             db, chain, market=build_market_provider(), signer=signer,
             per_wallet=int(settings.tracked_poll_per_wallet),
-            fresh_seconds=fresh, should_process=_should,
+            fresh_seconds=fresh,
         )
         # Panelde (Loglar) GÖRÜNÜR durum: aktivite varsa hemen yaz; aktivite yoksa
         # en çok ~20 dk'da bir "nabız" yaz (Loglar'ı boğmadan izleyici canlı mı,
