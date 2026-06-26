@@ -51,6 +51,41 @@ def setup(db: Session = Depends(get_db)):
     return setup_status(db)
 
 
+@setup_router.get("/live")
+def live_setup(db: Session = Depends(get_db)):
+    """Canlı işlem kurulum durumu (henüz aktif değilse de hazırlığı gösterir).
+    Canlı yol = PumpPortal Lightning cüzdanı (api-key). Yerel keystore opsiyoneldir."""
+    from ..config import settings as _s
+    from ..services.settings_service import get_setting
+    risk = get_setting(db, "risk")
+    keystore_addr = None
+    try:
+        from ..security.keystore import Keystore
+        ks = Keystore(_s.keystore_path)
+        keystore_addr = ks.public_address() if ks.exists() else None
+    except Exception:  # noqa: BLE001
+        keystore_addr = None
+    pumpportal = bool(_s.pumpportal_api_key)
+    mode = risk.get("mode", "paper")
+    live_confirmed = bool(risk.get("live_confirmed"))
+    engine_on = bool(risk.get("enabled"))
+    ready = pumpportal  # canlı için en azından PumpPortal anahtarı gerekir
+    return {
+        "trade_provider": _s.trade_provider,
+        "pumpportal_key": pumpportal,
+        "keystore_exists": keystore_addr is not None,
+        "keystore_address": keystore_addr,
+        "mode": mode,
+        "engine_enabled": engine_on,
+        "live_confirmed": live_confirmed,
+        "is_live_now": engine_on and mode == "live" and live_confirmed,
+        "ready_for_live": ready,
+        "default_pool": _s.pumpportal_default_pool,
+        "max_position_sol": risk.get("max_position_sol"),
+        "max_daily_spend_sol": risk.get("max_daily_spend_sol"),
+    }
+
+
 @setup_router.post("/discovery")
 def toggle_discovery(enabled: bool = Query(...), db: Session = Depends(get_db)):
     """Keşif akışını (pump.fun firehose) aç/kapat. Kapalıyken WS streaming kredisi

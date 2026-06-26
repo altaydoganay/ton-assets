@@ -61,6 +61,8 @@ _LABEL = {"sl": "stop-loss", "tp": "take-profit", "trailing": "takip eden stop",
 def manage_positions(db: Session, market: MarketProvider) -> list[dict]:
     """Akıllı çıkış kurallarını uygular; tetiklenen paper pozisyonlarını kapatır."""
     risk = get_setting(db, "risk")
+    if risk.get("pure_mirror_mode"):
+        return []  # SAF KOPYA: otomatik çıkış yok; yalnızca lider satınca satılır
     tp = float(risk.get("take_profit_pct", 0) or 0)
     sl = float(risk.get("stop_loss_pct", 0) or 0)
     trail = float(risk.get("trailing_stop_pct", 0) or 0)

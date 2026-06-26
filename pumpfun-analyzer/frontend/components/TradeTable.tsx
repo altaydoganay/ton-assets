@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { Fetch } from "./Fetch";
 import { shortAddr, fmtNum } from "@/lib/api";
 
@@ -16,8 +17,8 @@ export function TradeTable({ path, emptyLabel, live }: { path: string; emptyLabe
               {rows.map((r) => (
                 <tr key={r.id} className="border-b last:border-0" style={{ borderColor: "var(--border)" }}>
                   <td className="py-2 muted">{new Date(r.created_at).toLocaleString("tr-TR")}</td>
-                  <td>{shortAddr(r.wallet_address)}</td>
-                  <td>{shortAddr(r.token_mint)}</td>
+                  <td><Link href={`/wallets/${r.wallet_address}`} className="clickable">{shortAddr(r.wallet_address)}</Link></td>
+                  <td><Link href={`/tokens/${r.token_mint}`} className="clickable">{shortAddr(r.token_mint)}</Link></td>
                   <td><span className={r.side === "buy" ? "text-emerald-500" : "text-red-500"}>{r.side === "buy" ? "Alım" : "Satım"}</span></td>
                   <td>{fmtNum(r.sol_amount, 4)}</td>
                   <td className={r.realized_pnl_sol > 0 ? "text-emerald-500" : r.realized_pnl_sol < 0 ? "text-red-500" : ""}>{fmtNum(r.realized_pnl_sol, 4)}</td>

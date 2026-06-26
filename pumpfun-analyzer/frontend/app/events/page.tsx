@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { PageHeader } from "@/components/Confidence";
 import { Fetch } from "@/components/Fetch";
 import { shortAddr, fmtNum } from "@/lib/api";
@@ -18,8 +19,8 @@ export default function Events() {
                 {rows.map((s) => (
                   <tr key={s.id} className="border-b last:border-0" style={{ borderColor: "var(--border)" }}>
                     <td className="py-2 muted">{new Date(s.block_time).toLocaleString("tr-TR")}</td>
-                    <td>{shortAddr(s.wallet_address)}</td>
-                    <td>{shortAddr(s.token_mint)}</td>
+                    <td><Link href={`/wallets/${s.wallet_address}`} className="clickable">{shortAddr(s.wallet_address)}</Link></td>
+                    <td><Link href={`/tokens/${s.token_mint}`} className="clickable">{shortAddr(s.token_mint)}</Link></td>
                     <td><span className={s.side === "buy" ? "text-emerald-500" : "text-red-500"}>{s.side === "buy" ? "Alım" : "Satım"}</span></td>
                     <td>{fmtNum(s.sol_amount, 4)}</td>
                     <td className="muted">{s.venue || "—"}</td>

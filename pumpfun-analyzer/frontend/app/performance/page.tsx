@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import useSWR from "swr";
 import { fetcher, apiSend, API_URL } from "@/lib/api";
 import { PageHeader } from "@/components/Confidence";
@@ -118,7 +119,7 @@ export default function Performance() {
                 <tbody>
                   {copy.map((r) => (
                     <tr key={r.wallet} className="border-t" style={{ borderColor: "var(--border)" }}>
-                      <td className="py-1.5 font-mono text-xs">{String(r.wallet).slice(0, 4)}…{String(r.wallet).slice(-4)}</td>
+                      <td className="py-1.5"><Link href={`/wallets/${r.wallet}`} className="clickable font-mono text-xs">{String(r.wallet).slice(0, 4)}…{String(r.wallet).slice(-4)}</Link></td>
                       <td>{r.status === "blocked"
                         ? <span className="badge" style={{ background: "color-mix(in srgb, var(--rose) 16%, transparent)", color: "var(--rose)" }}>Elendi</span>
                         : <span className="badge" style={{ background: "color-mix(in srgb, var(--emerald) 16%, transparent)", color: "var(--emerald)" }}>Takipte</span>}</td>

@@ -35,7 +35,7 @@ def test_trailing_stop_locks_profit(db):
     db.query(PaperTrade).delete()
     set_setting(db, "position_state", {})
     # +%50 TP'ye değmesin diye TP/SL kapalı; sadece trailing
-    set_setting(db, "risk", {**DEFAULTS["risk"], "take_profit_pct": 0.0, "stop_loss_pct": 0.0,
+    set_setting(db, "risk", {**DEFAULTS["risk"], "pure_mirror_mode": False, "take_profit_pct": 0.0, "stop_loss_pct": 0.0,
                              "trailing_stop_pct": 0.12, "trail_activate_pct": 0.15, "max_hold_minutes": 0})
     # alım: 100 token, 1.0 SOL maliyet => avg 0.01
     db.add(PaperTrade(wallet_address="W", token_mint="TRAIL", side="buy",
@@ -53,7 +53,7 @@ def test_trailing_stop_locks_profit(db):
 def test_no_exit_when_all_disabled(db):
     seed_defaults(db)
     db.query(PaperTrade).delete()
-    set_setting(db, "risk", {**DEFAULTS["risk"], "take_profit_pct": 0.0, "stop_loss_pct": 0.0,
+    set_setting(db, "risk", {**DEFAULTS["risk"], "pure_mirror_mode": False, "take_profit_pct": 0.0, "stop_loss_pct": 0.0,
                              "trailing_stop_pct": 0.0, "max_hold_minutes": 0})
     db.add(PaperTrade(wallet_address="W", token_mint="NOEX", side="buy",
                       sol_amount=1.0, token_amount=100, price_sol=0.01))

@@ -30,7 +30,7 @@ def test_manage_positions_closes_on_tp(db):
     db.add(PaperTrade(wallet_address="W", token_mint="TPMINT", side="buy",
                       sol_amount=1.0, token_amount=100, price_sol=0.01))
     db.commit()
-    set_setting(db, "risk", {**DEFAULTS["risk"], "take_profit_pct": 0.5, "stop_loss_pct": 0.3})
+    set_setting(db, "risk", {**DEFAULTS["risk"], "pure_mirror_mode": False, "take_profit_pct": 0.5, "stop_loss_pct": 0.3})
     closed = manage_positions(db, FixedMarket(0.02))  # +%100 => TP
     assert len(closed) == 1 and closed[0]["reason"] == "tp"
     assert all(p["token_mint"] != "TPMINT" for p in open_positions(db))

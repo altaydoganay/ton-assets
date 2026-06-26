@@ -52,7 +52,11 @@ DEFAULTS: dict[str, dict] = {
         "close_mode": "proportional",
         "take_profit_pct": 0.5,   # +%50'de sat (sert TP)
         "stop_loss_pct": 0.25,    # -%25'te sat (sert SL)
-        # --- AKILLI ÇIKIŞ (kârı belirleyen yer) ---
+        # SAF KOPYA MODU: açıkken otomatik çıkışlar (TP/SL/trailing/zaman) DEVRE DIŞI;
+        # yalnızca lider satınca satılır. Takip ettiğimiz cüzdanların GERÇEK kazancını
+        # net ölçmek için ölçüm aşamasında AÇIK gelir.
+        "pure_mirror_mode": True,
+        # --- AKILLI ÇIKIŞ (kârı belirleyen yer; pure_mirror kapalıyken çalışır) ---
         "trailing_stop_pct": 0.12,   # fiyat zirveden %12 düşerse sat (0 = kapalı)
         "trail_activate_pct": 0.15,  # takip eden stop, +%15 kâra ulaşınca aktifleşir
         "max_hold_minutes": 45,      # bu süre dolunca pozisyonu kapat (0 = kapalı)

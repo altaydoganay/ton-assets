@@ -6,7 +6,7 @@ import clsx from "clsx";
 import {
   LayoutDashboard, Search, Star, Coins, BadgeCheck, Activity, Bell, FlaskConical,
   Zap, Wallet, History, ShieldAlert, Server, HeartPulse, ScrollText, LineChart,
-  Rocket, Menu, X,
+  Rocket, Menu, X, Trophy, Radio,
 } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 import { ListenerStatus } from "./ListenerStatus";
@@ -18,12 +18,13 @@ const NAV = [
     { href: "/performance", label: "Performans", icon: LineChart },
   ]},
   { group: "Cüzdanlar", items: [
+    { href: "/wallets/leaderboard", label: "Cüzdan Sıralaması", icon: Trophy },
     { href: "/wallets/discovered", label: "Keşfedilen Cüzdanlar", icon: Search },
     { href: "/wallets/tracked", label: "Takip Edilen Cüzdanlar", icon: Star },
   ]},
   { group: "Tokenler", items: [
     { href: "/tokens", label: "Token Analizi", icon: Coins },
-    { href: "/tokens/tracked", label: "Takip Edilen Tokenler", icon: BadgeCheck },
+    { href: "/tokens/tracked", label: "Token Performansı", icon: BadgeCheck },
   ]},
   { group: "İşlemler", items: [
     { href: "/events", label: "Canlı Olay Akışı", icon: Activity },
@@ -35,6 +36,7 @@ const NAV = [
   ]},
   { group: "Ayarlar", items: [
     { href: "/settings/risk", label: "Risk Ayarları", icon: ShieldAlert },
+    { href: "/settings/live", label: "Canlı İşlem Kurulumu", icon: Radio },
     { href: "/settings/api", label: "API ve RPC Ayarları", icon: Server },
     { href: "/health", label: "Sistem Sağlığı", icon: HeartPulse },
     { href: "/logs", label: "Loglar", icon: ScrollText },

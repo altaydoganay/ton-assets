@@ -87,6 +87,34 @@ def tracked_wallets(db: Session = Depends(get_db)):
     )
 
 
+@router.get("/leaderboard")
+def leaderboard(limit: int = Query(300, le=1000), db: Session = Depends(get_db)):
+    """TÜM puanlanmış cüzdanları KENDİ performanslarıyla döner (sıralama sayfası).
+    Cüzdanların kendi al-sat sonuçları: başarı oranı, gerçekleşen PnL, profit
+    factor, ortalama alım büyüklüğü, vb. (Bizim kopya sonucumuz değil — liderin
+    GERÇEK performansı.)"""
+    rows = (db.query(Wallet)
+            .filter(Wallet.latest_score.isnot(None))
+            .order_by(Wallet.latest_score.desc()).limit(limit).all())
+    out = []
+    for w in rows:
+        m = w.metrics or {}
+        out.append({
+            "address": w.address, "label": w.label, "status": w.status,
+            "score": w.latest_score, "confidence": w.confidence,
+            "win_rate": m.get("win_rate"),
+            "realized_pnl_sol": m.get("realized_pnl_sol"),
+            "profit_factor": m.get("profit_factor"),
+            "closed_positions": m.get("closed_positions"),
+            "token_diversity": m.get("token_diversity"),
+            "median_hold_seconds": m.get("median_hold_seconds"),
+            "history_days": m.get("history_days"),
+            "avg_buy_size_sol": m.get("avg_buy_size_sol"),
+            "last_analyzed": w.last_analyzed.isoformat() if w.last_analyzed else None,
+        })
+    return out
+
+
 @router.get("/{address}", response_model=WalletDetail)
 def get_wallet(address: str, db: Session = Depends(get_db)):
     w = db.query(Wallet).filter(Wallet.address == address).first()

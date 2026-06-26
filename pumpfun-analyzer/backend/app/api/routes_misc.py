@@ -139,6 +139,13 @@ def copy_performance(include_blocked: bool = True, db: Session = Depends(get_db)
     return tracked_copy_stats(db, include_blocked=include_blocked)
 
 
+@trading_router.get("/token-performance")
+def token_performance(db: Session = Depends(get_db)):
+    """BİZİM token bazlı sonucumuz: hangi token kâr/zarar getirdi (paper)."""
+    from ..services.copy_performance import token_copy_stats
+    return token_copy_stats(db)
+
+
 @trading_router.post("/test-run")
 def test_run(db: Session = Depends(get_db)):
     """ANINDA teşhis: bir takip cüzdanının en son alımını senkron işler ve kararı

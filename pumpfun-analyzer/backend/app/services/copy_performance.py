@@ -79,6 +79,45 @@ def tracked_copy_stats(db: Session, include_blocked: bool = False) -> list[dict]
     return rows
 
 
+def token_copy_stats(db: Session) -> list[dict]:
+    """BİZİM token bazlı sonucumuz: hangi token'de ne kadar kâr/zarar ettik
+    (paper). Kapanmış realized PnL + açık pozisyon. En kazandıran üstte."""
+    from ..models import Token
+    trades = (db.query(PaperTrade).order_by(PaperTrade.created_at.asc()).all())
+    agg: dict[str, dict] = {}
+    for t in trades:
+        a = agg.setdefault(t.token_mint, {"mint": t.token_mint, "buys": 0, "sells": 0,
+                                          "realized_pnl_sol": 0.0, "wins": 0, "losses": 0,
+                                          "qty": 0.0, "cost": 0.0, "last": None})
+        a["last"] = t.created_at.isoformat()
+        if t.side == "buy":
+            a["buys"] += 1; a["qty"] += t.token_amount; a["cost"] += t.sol_amount
+        else:
+            a["sells"] += 1
+            a["realized_pnl_sol"] += float(t.realized_pnl_sol or 0.0)
+            if (t.realized_pnl_sol or 0) > 0: a["wins"] += 1
+            elif (t.realized_pnl_sol or 0) < 0: a["losses"] += 1
+            if a["qty"] > 0:
+                frac = min(1.0, t.token_amount / a["qty"]) if a["qty"] else 0
+                a["cost"] -= a["cost"] * frac; a["qty"] -= t.token_amount
+                if a["qty"] < 1e-9: a["qty"] = 0.0; a["cost"] = 0.0
+    rows = []
+    for mint, a in agg.items():
+        tok = db.query(Token).filter(Token.mint == mint).first()
+        closed = a["wins"] + a["losses"]
+        rows.append({
+            "mint": mint, "symbol": (tok.symbol or tok.name) if tok else None,
+            "score": tok.latest_score if tok else None,
+            "realized_pnl_sol": round(a["realized_pnl_sol"], 4),
+            "closed_trades": closed, "wins": a["wins"], "losses": a["losses"],
+            "win_rate": round(a["wins"] / closed, 3) if closed else 0.0,
+            "open_qty": round(a["qty"], 2), "open_cost_sol": round(a["cost"], 4),
+            "buys": a["buys"], "last": a["last"],
+        })
+    rows.sort(key=lambda r: r["realized_pnl_sol"], reverse=True)
+    return rows
+
+
 def prune_underperformers(db: Session, *, enabled: bool = True, max_consecutive_losses: int = 5,
                           min_closed_trades: int = 6, min_win_rate: float = 0.30) -> dict:
     """Kopya performansı kötü cüzdanları ENGELLE (status=blocked).
