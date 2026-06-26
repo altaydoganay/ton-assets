@@ -257,6 +257,30 @@ def poll_tracked_wallets() -> dict:
         db.close()
 
 
+@celery_app.task(name="app.workers.tasks.prune_underperformers")
+def prune_underperformers() -> dict:
+    """Kopya performansı kötü (ardışık zarar / kümülatif drawdown) cüzdanları
+    otomatik engeller — paper aşamasında başarısızları eler."""
+    from ..services.copy_performance import prune_underperformers as _prune
+    from ..services.settings_service import get_setting
+
+    db = SessionLocal()
+    try:
+      with _singleton("prune_underperformers", ttl=300) as got:
+        if not got:
+            return {"skipped": "locked"}
+        r = get_setting(db, "risk")
+        return _prune(
+            db,
+            enabled=bool(r.get("copy_prune_enabled", True)),
+            max_consecutive_losses=int(r.get("copy_max_consecutive_losses", 5)),
+            min_closed_trades=int(r.get("copy_min_closed_trades", 4)),
+            max_drawdown_sol=float(r.get("copy_max_drawdown_sol", -0.5)),
+        )
+    finally:
+        db.close()
+
+
 @celery_app.task(name="app.workers.tasks.reanalyze_tracked")
 def reanalyze_tracked() -> dict:
     db = SessionLocal()

@@ -15,7 +15,7 @@ DEFAULTS: dict[str, dict] = {
     "wallet_weights": WALLET_WEIGHTS,
     "wallet_eligibility": DEFAULT_ELIGIBILITY,
     "token_weights": TOKEN_WEIGHTS,
-    "thresholds": {"wallet": 70.0, "token": 70.0},
+    "thresholds": {"wallet": 65.0, "token": 70.0},  # cüzdan eşiği düşük: geniş al + eleme temizler
     "risk": {
         # Paper (simülasyon) işlem motoru varsayılan AÇIK — risksizdir; CANLI
         # (gerçek para) ayrı bir onaya bağlıdır (live_confirmed) ve KAPALI kalır.
@@ -52,6 +52,11 @@ DEFAULTS: dict[str, dict] = {
         "close_mode": "proportional",
         "take_profit_pct": 0.6,   # +%60'da sat (dengeli)
         "stop_loss_pct": 0.3,     # -%30'da sat (dengeli)
+        # --- Kopya performansına göre OTOMATİK ELEME ---
+        "copy_prune_enabled": True,
+        "copy_max_consecutive_losses": 5,   # N ardışık zarar => cüzdanı engelle
+        "copy_min_closed_trades": 4,        # yargılamadan önce en az N kapanmış işlem
+        "copy_max_drawdown_sol": -0.5,      # kümülatif kopya PnL bu SOL'un altına düşerse engelle
     },
 }
 
@@ -145,6 +150,22 @@ def seed_defaults(db: Session) -> None:
             risk["mode"] = "paper"
         set_setting(db, "risk", risk)
         set_setting(db, "_meta_risk_policy_v6", {"applied": True})
+
+    # v7: DAHA ÇOK cüzdan + kopya-performansı elemesi. Takip eşiği 70->65 (paper
+    # aşamasında geniş al; kaybedenleri otomatik eleme temizler). Prune varsayılanları
+    # mevcut risk kaydına eklenir (panelden değiştirilebilir).
+    if not db.query(Setting).filter(Setting.key == "_meta_risk_policy_v7").first():
+        th = get_setting(db, "thresholds")
+        if float(th.get("wallet", 70.0)) >= 70.0:
+            th["wallet"] = 65.0
+            set_setting(db, "thresholds", th)
+        risk = get_setting(db, "risk")
+        risk.setdefault("copy_prune_enabled", True)
+        risk.setdefault("copy_max_consecutive_losses", 5)
+        risk.setdefault("copy_min_closed_trades", 4)
+        risk.setdefault("copy_max_drawdown_sol", -0.5)
+        set_setting(db, "risk", risk)
+        set_setting(db, "_meta_risk_policy_v7", {"applied": True})
 
 
 def all_settings(db: Session) -> dict[str, dict]:

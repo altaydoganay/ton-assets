@@ -110,6 +110,14 @@ def emergency_stop(close_positions: bool = False, db: Session = Depends(get_db))
             "detail": "Yeni işlemler durduruldu" + (" ve açık pozisyonlar kapatılacak" if close_positions else "")}
 
 
+@trading_router.get("/copy-performance")
+def copy_performance(include_blocked: bool = True, db: Session = Depends(get_db)):
+    """Cüzdan-bazlı KOPYA performansı: bizim paper sonuçlarımıza göre her takip
+    (ve engellenen) cüzdanın PnL'i, kazanç/kayıp, ardışık zarar."""
+    from ..services.copy_performance import tracked_copy_stats
+    return tracked_copy_stats(db, include_blocked=include_blocked)
+
+
 @trading_router.post("/test-run")
 def test_run(db: Session = Depends(get_db)):
     """ANINDA teşhis: bir takip cüzdanının en son alımını senkron işler ve kararı

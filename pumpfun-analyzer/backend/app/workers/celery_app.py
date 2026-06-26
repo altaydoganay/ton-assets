@@ -39,6 +39,8 @@ celery_app.conf.update(
         "manage-positions": {"task": "app.workers.tasks.manage_positions", "schedule": 60.0},
         # Analiz edilmiş umut vadeden cüzdanları güncel kriterlerle yeniden değerlendir
         "reevaluate-analyzed": {"task": "app.workers.tasks.reevaluate_analyzed", "schedule": 300.0},
+        # Kopya performansı kötü cüzdanları otomatik ele (ardışık zarar / drawdown)
+        "prune-underperformers": {"task": "app.workers.tasks.prune_underperformers", "schedule": 180.0},
     },
 )
 

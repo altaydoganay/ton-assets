@@ -12,6 +12,7 @@ const tip = { background: "var(--card)", border: "1px solid var(--border)", bord
 export default function Performance() {
   const { data: perf } = useSWR<any>("/stats/performance", fetcher, { refreshInterval: 20000 });
   const { data: sum } = useSWR<any>("/stats/trading-summary", fetcher, { refreshInterval: 15000 });
+  const { data: copy } = useSWR<any[]>("/trading/copy-performance", fetcher, { refreshInterval: 20000 });
   if (!perf) return <Loading />;
 
   return (
@@ -61,6 +62,45 @@ export default function Performance() {
             <div className="flex h-[260px] items-center justify-center text-sm muted">
               Henüz kapanmış paper işlem yok. Takip edilen cüzdanlar işlem yaptıkça burası dolacak.
             </div>
+          )}
+        </Section>
+      </div>
+
+      <div className="mt-4">
+        <Section title="Cüzdan Bazlı Kopya Performansı">
+          <p className="text-xs muted mb-3">
+            Her takip cüzdanını KOPYALAMANIN bize getirdiği sonuç. Ardışık zarar eşiğini aşan
+            cüzdanlar otomatik elenir (kırmızı "Elendi"). En kazandıranlar üstte.
+          </p>
+          {copy && copy.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="text-left muted">
+                  <th className="py-1">Cüzdan</th><th>Durum</th><th>Kapanan</th><th>K / Z</th>
+                  <th>Başarı</th><th>Ardışık Zarar</th><th>Açık</th><th className="text-right">Kopya PnL (SOL)</th>
+                </tr></thead>
+                <tbody>
+                  {copy.map((r) => (
+                    <tr key={r.wallet} className="border-t" style={{ borderColor: "var(--border)" }}>
+                      <td className="py-1 font-mono text-xs">{String(r.wallet).slice(0, 4)}…{String(r.wallet).slice(-4)}</td>
+                      <td>{r.status === "blocked"
+                        ? <span style={{ color: "#ef4444" }}>Elendi</span>
+                        : <span style={{ color: "#10b981" }}>Takipte</span>}</td>
+                      <td>{r.closed_trades}</td>
+                      <td>{r.wins}/{r.losses}</td>
+                      <td>%{Math.round((r.win_rate || 0) * 100)}</td>
+                      <td style={r.consecutive_losses >= 3 ? { color: "#ef4444", fontWeight: 600 } : {}}>{r.consecutive_losses}</td>
+                      <td>{r.open_positions}</td>
+                      <td className="text-right font-semibold" style={{ color: r.total_pnl_sol >= 0 ? "#10b981" : "#ef4444" }}>
+                        {r.total_pnl_sol >= 0 ? "+" : ""}{Number(r.total_pnl_sol).toFixed(4)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm muted py-6 text-center">Henüz kopya işlem verisi yok. İşlemler kapandıkça burası dolacak.</p>
           )}
         </Section>
       </div>

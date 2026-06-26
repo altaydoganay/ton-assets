@@ -28,6 +28,10 @@ const FIELDS: { key: string; label: string; type: "number" | "bool" | "text"; hi
   { key: "min_liquidity_sol", label: "Min. Likidite (SOL)", type: "number" },
   { key: "take_profit_pct", label: "Take-Profit (oran)", type: "number", hint: "0 = kapalı. 0.5 = +%50'de otomatik sat (paper)" },
   { key: "stop_loss_pct", label: "Stop-Loss (oran)", type: "number", hint: "0 = kapalı. 0.3 = -%30'da otomatik sat (paper)" },
+  { key: "copy_prune_enabled", label: "Otomatik Eleme", type: "bool", hint: "Kopya performansı kötü cüzdanları otomatik engelle" },
+  { key: "copy_max_consecutive_losses", label: "Maks. Ardışık Zarar", type: "number", hint: "Bu kadar ardışık zarar eden cüzdan elenir (0 = kapalı)" },
+  { key: "copy_min_closed_trades", label: "Eleme İçin Min. İşlem", type: "number", hint: "Bir cüzdanı yargılamadan önce en az bu kadar kapanmış işlem" },
+  { key: "copy_max_drawdown_sol", label: "Maks. Kopya Zararı (SOL)", type: "number", hint: "Kümülatif kopya PnL bu değerin altına düşerse cüzdan elenir" },
 ];
 
 const PROFILES = [
