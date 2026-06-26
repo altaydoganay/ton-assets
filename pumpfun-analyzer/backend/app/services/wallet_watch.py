@@ -48,11 +48,13 @@ def poll_tracked_wallets(
         # Enhanced yoksa (Helius anahtarı yok) bu güvenilir yol devre dışı.
         return {"polled": 0, "fresh_buys": 0, "triggered": 0, "skipped": "no_enhanced"}
 
+    from collections import Counter
     should_process = should_process or (lambda _sig: True)
     tracked = db.query(Wallet).filter(Wallet.status == WalletStatus.tracked.value).all()
     now = time.time()
     fresh_buys = 0
     triggered = 0
+    reasons: Counter = Counter()  # işlem AÇILMADIYSA gerçek sebepler (teşhis)
 
     for w in tracked:
         try:
@@ -83,10 +85,24 @@ def poll_tracked_wallets(
             try:
                 res = handle_trade_event(db, trade, chain=chain, market=market,
                                          notifier=notifier, signer=signer)
-                if res.get("action") == "buy":
-                    triggered += 1
+                act = res.get("action")
+                if act == "buy" and res.get("traded"):
+                    triggered += 1  # gerçekten paper/canlı işlem açıldı
+                elif act == "buy":
+                    # token kapısını geçti ama MOTOR açmadı (kapalı/limit/skor)
+                    tb = res.get("trade_blocked")
+                    reasons["motor: " + (", ".join(tb) if tb else "motor kapalı veya limit")[:80]] += 1
+                elif act == "skipped":
+                    reasons[str(res.get("reason", "?"))[:90]] += 1
+                elif act == "ignored":
+                    reasons["cüzdan takipte değil"] += 1
+                else:
+                    reasons[f"sonuç: {act}"[:90]] += 1
             except Exception as exc:  # noqa: BLE001
                 logger.exception("[WATCH] işlem akışı hatası %s: %s", swap.signature[:8], exc)
+                reasons[f"HATA {type(exc).__name__}: {exc}"[:90]] += 1
 
-    logger.info("[WATCH] tracked=%d fresh_buys=%d triggered=%d", len(tracked), fresh_buys, triggered)
-    return {"polled": len(tracked), "fresh_buys": fresh_buys, "triggered": triggered}
+    logger.info("[WATCH] tracked=%d fresh_buys=%d triggered=%d reasons=%s",
+                len(tracked), fresh_buys, triggered, dict(reasons.most_common(5)))
+    return {"polled": len(tracked), "fresh_buys": fresh_buys, "triggered": triggered,
+            "reasons": dict(reasons.most_common(5))}

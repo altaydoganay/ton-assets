@@ -29,9 +29,10 @@ from ..models import AuditLog, Token, TokenStatus, Wallet, WalletStatus
 from ..notifications.telegram import AlertContent, TelegramNotifier, short_addr
 from ..trading.engine import CopyTradeEngine, TradeContext, LiveTradingNotConfigured
 from ..trading.risk import RiskConfig
+from .analysis_service import get_or_create_token
 from .pipeline import store_swap
 from .settings_service import get_setting
-from .token_analysis import assess_token
+from .token_analysis import TokenAssessment, assess_token
 
 logger = logging.getLogger(__name__)
 
@@ -124,14 +125,25 @@ def handle_trade_event(
     if swap.signature:
         store_swap(db, swap)
 
-    # 2) cüzdan takipte mi?
+    # 2) cüzdan takipte mi? Takip KARARINA güveniriz (histerezis nedeniyle 65-70
+    # bandındaki takip edilen cüzdanları da kabul ederiz — aksi halde takipteyken
+    # alımları sessizce yok sayılırdı; bu, "0 işlem"in sebeplerinden biriydi).
     wallet = db.query(Wallet).filter(Wallet.address == trade.trader).first()
-    wallet_threshold = get_setting(db, "thresholds").get("wallet", 70.0)
-    if not wallet or wallet.status != WalletStatus.tracked.value or (wallet.latest_score or 0) < wallet_threshold:
+    if not wallet or wallet.status != WalletStatus.tracked.value:
         return {"action": "ignored", "reason": "cüzdan takipte değil"}
 
-    # 3) tokeni değerlendir (önbellekli, hızlı) — canlı alımda gecikmeyi azaltır
-    assessment = assess_token(db, trade.mint, chain, market, settings.token_score_cache_seconds)
+    # 3) tokeni değerlendir (önbellekli, hızlı) — canlı alımda gecikmeyi azaltır.
+    # Veri çekilemezse (RPC/market hatası) İŞLEMİ ÖLDÜRME: safety modunda cüzdana
+    # güvenip "vetosuz/bilinmeyen" varsayarız (taze token doğrulanamayabilir).
+    try:
+        assessment = assess_token(db, trade.mint, chain, market, settings.token_score_cache_seconds)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Token değerlendirilemedi %s: %s", trade.mint, exc)
+        assessment = TokenAssessment(
+            token=get_or_create_token(db, trade.mint), total=0.0, vetoed=False,
+            veto_reasons=[f"değerlendirme yapılamadı ({type(exc).__name__})"],
+            liquidity_sol=0.0, cached=False,
+        )
     token = assessment.token
     token_threshold = get_setting(db, "thresholds").get("token", 70.0)
     # İşlem kapısı politikası: cüzdan alpha; token bir GÜVENLİK filtresidir.

@@ -238,17 +238,22 @@ def poll_tracked_wallets() -> dict:
             show = (fresh_buys > 0) or (triggered > 0) or _should_heartbeat(db, "watch", 20)
             if show:
                 from ..models import AuditLog
+                from ..services.settings_service import get_setting
+                gate = get_setting(db, "risk").get("token_gate", "safety")
+                reasons = result.get("reasons") or {}
+                reason_txt = " · ".join(f"{k} ({v})" for k, v in reasons.items())
                 if not polled:
                     msg = "İzleme: takip edilen aktif cüzdan yok (havuz boş)"
                 elif fresh_buys == 0:
                     msg = (f"İzleme: {polled} takip cüzdanı yoklandı · taze alım YOK "
                            f"(cüzdanlar şu an alım yapmıyor)")
                 elif triggered == 0:
-                    msg = (f"İzleme: {polled} cüzdan · {fresh_buys} taze alım · 0 işlem "
-                           f"(token'ler kapıdan geçmedi — Risk Ayarları'ndan kapıyı gevşet)")
+                    # GERÇEK sebebi göster (veto / hata / puan) — kör tahmin yok.
+                    msg = (f"İzleme: {polled} cüzdan · {fresh_buys} taze alım · 0 işlem · "
+                           f"kapı={gate} · sebep: {reason_txt or 'bu döngüde yeni alım işlenmedi (dedup)'}")
                 else:
                     msg = (f"İzleme: {polled} cüzdan · {fresh_buys} taze alım · "
-                           f"{triggered} işlem tetiklendi")
+                           f"{triggered} işlem tetiklendi · kapı={gate}")
                 db.add(AuditLog(level="info", category="watch", message=msg, context=result))
                 db.commit()
         except Exception:  # noqa: BLE001

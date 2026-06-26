@@ -152,6 +152,19 @@ def test_balanced_gate_skips_garbage_but_trades_decent(db):
     assert db.query(PaperTrade).filter(PaperTrade.source_signature == "bal-d1", PaperTrade.side == "buy").count() == 1
 
 
+def test_hysteresis_band_wallet_is_followed(db):
+    """Histerezis bandındaki (65-70 puan) takip edilen cüzdanın alımı artık
+    sessizce yok sayılmaz — takip KARARINA güvenilir."""
+    w = Wallet(address="HystBandLeader1111111111111111111111111111",
+               status=WalletStatus.tracked.value, latest_score=66.0, risk_flags=[])
+    db.add(w); db.commit()
+    set_setting(db, "risk", {**_safety_risk(), "min_wallet_score": 65}); reset_engine()
+    res = handle_trade_event(db, _trade(w.address, "HystMint11111111111111111111111111111111111", "hyst-1"),
+                             chain=BondingChain(), market=NoMarket(), notifier=TelegramNotifier())
+    assert res["action"] == "buy"   # 66<70 olsa da takipte => işlenir
+    assert res["traded"] is True
+
+
 def test_safety_gate_still_vetoes_dangerous_token(db):
     """safety modu rug filtresini KORUR: aktif mint yetkisi => işlem yok."""
     w = _wallet(db, "SafeGateLeader3333333333333333333333333333")
