@@ -119,9 +119,9 @@ def test_run(db: Session = Depends(get_db)):
     from ..services.wallet_watch import run_diagnostic_trade
     try:
         chain = build_chain_provider(throttle=False)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(503, f"Zincir sağlayıcı kurulamadı: {exc}")
-    return run_diagnostic_trade(db, chain, market=build_market_provider())
+        return run_diagnostic_trade(db, chain, market=build_market_provider())
+    except Exception as exc:  # noqa: BLE001 — her durumda JSON dön (CORS'lu)
+        return {"ok": False, "reason": f"Test çalıştırılamadı: {type(exc).__name__}: {str(exc)[:200]}"}
 
 
 # --- Ayarlar ---

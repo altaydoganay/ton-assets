@@ -118,35 +118,49 @@ def poll_tracked_wallets(
 
 
 def run_diagnostic_trade(db: Session, chain: ChainProvider,
-                         market: MarketProvider | None = None) -> dict:
+                         market: MarketProvider | None = None,
+                         max_wallets: int = 8, recent_seconds: int = 3600,
+                         budget_seconds: float = 12.0) -> dict:
     """Bir takip cüzdanının EN SON alımını SENKRON işler ve KARARI döner.
 
     Worker/beat çalışmasa bile panelden ANINDA sonuç verir: işlem açıldı mı, yoksa
-    hangi sebeple açılmadı (veto / motor / hata). Teşhis amaçlı — gerçek paper
-    işlem açılabilir (risksiz). Alert dedup'ı atlanır ki karar her zaman görünsün."""
+    hangi sebeple açılmadı (veto / motor / hata). HIZLI ve SINIRLI: en çok
+    `max_wallets` cüzdan, yalnızca SON `recent_seconds` imzalar için getTransaction,
+    ve `budget_seconds` zaman bütçesi (zaman aşımı/"Failed to fetch" olmasın)."""
     import time as _t
     from .live_flow import handle_trade_event as _hte
 
     tracked = (db.query(Wallet).filter(Wallet.status == WalletStatus.tracked.value)
-               .order_by(Wallet.latest_score.desc()).all())
+               .order_by(Wallet.latest_score.desc()).limit(max_wallets).all())
     if not tracked:
         return {"ok": False, "reason": "Takip edilen cüzdan yok."}
+    start = _t.monotonic()
     now = _t.time()
     checked = 0
+    errors = 0
     for w in tracked:
+        if _t.monotonic() - start > budget_seconds:
+            break
         try:
-            sigs = chain.get_signatures_for_address(w.address, limit=10)
+            sigs = chain.get_signatures_for_address(w.address, limit=8)
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "reason": f"İmza alınamadı: {type(exc).__name__}: {exc}"}
+            errors += 1
+            continue
         for s in sigs or []:
+            if _t.monotonic() - start > budget_seconds:
+                break
             sig = s.get("signature") if isinstance(s, dict) else s
             bt = s.get("blockTime") if isinstance(s, dict) else None
             if not sig:
+                continue
+            # SADECE taze imzalar için getTransaction (kredi + hız koruması)
+            if bt is not None and (now - bt) > recent_seconds:
                 continue
             checked += 1
             try:
                 raw = chain.get_transaction(sig)
             except Exception:  # noqa: BLE001
+                errors += 1
                 continue
             ntx = normalize_rpc_transaction(raw) if raw else None
             if ntx is None:
@@ -164,5 +178,7 @@ def run_diagnostic_trade(db: Session, chain: ChainProvider,
             return {"ok": True, "wallet": w.address, "wallet_score": w.latest_score,
                     "token": swap.token_mint, "buy_age_min": round(age_min, 1) if age_min else None,
                     "result": res}
-    return {"ok": False, "reason": f"Son işlemlerde ALIM bulunamadı ({checked} imza tarandı). "
-                                   f"Cüzdanlar şu an satış/transfer yapıyor olabilir."}
+    note = f" ({errors} RPC hatası)" if errors else ""
+    return {"ok": False, "reason": f"Son {recent_seconds//60} dk içinde ALIM bulunamadı "
+                                   f"({checked} taze işlem tarandı{note}). Cüzdanlar şu an "
+                                   f"satış/transfer yapıyor olabilir — birkaç saniye sonra tekrar dene."}
