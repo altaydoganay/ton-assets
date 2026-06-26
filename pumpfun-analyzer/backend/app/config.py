@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     app_name: str = "Pump.fun Cüzdan Analizcisi"
     # SÜRÜM/BUILD numarası — her anlamlı güncellemede artar. Panelin üst barında
     # ve /health'te gösterilir; deploy'un doğru kodu aldığını buradan doğrularsın.
-    app_build: str = "9"
-    app_build_label: str = "gerçek ret sebebi loglarda + histerezis/safety düzeltmeleri"
+    app_build: str = "10"
+    app_build_label: str = "nabız: dedup'tan bağımsız gerçek durum (son karar + paper alım)"
     environment: Literal["development", "production", "test"] = "development"
     api_prefix: str = "/api"
     secret_key: str = Field(default="degistir-bu-anahtari", description="Uygulama imza anahtarı")

@@ -237,23 +237,32 @@ def poll_tracked_wallets() -> dict:
             triggered = result.get("triggered", 0)
             show = (fresh_buys > 0) or (triggered > 0) or _should_heartbeat(db, "watch", 20)
             if show:
-                from ..models import AuditLog
+                from datetime import datetime, timezone, timedelta
+                from ..models import AuditLog, PaperTrade
                 from ..services.settings_service import get_setting
                 gate = get_setting(db, "risk").get("token_gate", "safety")
                 reasons = result.get("reasons") or {}
                 reason_txt = " · ".join(f"{k} ({v})" for k, v in reasons.items())
+                # Dedup'tan BAĞIMSIZ gerçek durum: son 1 saatte kaç paper alım açıldı
+                # ve en son işlem KARARI neydi (alım başına detay).
+                hr_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+                paper_1h = (db.query(PaperTrade)
+                            .filter(PaperTrade.side == "buy", PaperTrade.created_at >= hr_ago).count())
+                last_dec = (db.query(AuditLog).filter(AuditLog.category == "trading")
+                            .order_by(AuditLog.id.desc()).first())
+                last_txt = (last_dec.message[:130] if last_dec else "henüz alım-başına karar yok")
+                tail = f" · son 1s paper alım: {paper_1h} · son karar: {last_txt}"
                 if not polled:
                     msg = "İzleme: takip edilen aktif cüzdan yok (havuz boş)"
                 elif fresh_buys == 0:
                     msg = (f"İzleme: {polled} takip cüzdanı yoklandı · taze alım YOK "
-                           f"(cüzdanlar şu an alım yapmıyor)")
+                           f"(cüzdanlar şu an alım yapmıyor)") + tail
                 elif triggered == 0:
-                    # GERÇEK sebebi göster (veto / hata / puan) — kör tahmin yok.
                     msg = (f"İzleme: {polled} cüzdan · {fresh_buys} taze alım · 0 işlem · "
-                           f"kapı={gate} · sebep: {reason_txt or 'bu döngüde yeni alım işlenmedi (dedup)'}")
+                           f"kapı={gate} · sebep: {reason_txt or 'bu döngüde yeni alım yok (dedup)'}") + tail
                 else:
                     msg = (f"İzleme: {polled} cüzdan · {fresh_buys} taze alım · "
-                           f"{triggered} işlem tetiklendi · kapı={gate}")
+                           f"{triggered} işlem AÇILDI · kapı={gate}") + tail
                 db.add(AuditLog(level="info", category="watch", message=msg, context=result))
                 db.commit()
         except Exception:  # noqa: BLE001
