@@ -1,18 +1,19 @@
-"""Takip edilen cüzdanları GÜVENİLİR biçimde izleyen poll (yoklama) servisi.
+"""Takip edilen cüzdanları GÜVENİLİR ve UCUZ izleyen poll (yoklama) servisi.
 
 Neden poll? Helius `logsSubscribe` (WS) olayları sessizce KAÇIRABİLİR ve yoğun
-RPC yükünde aç kalabilir — bu yüzden "takipteki cüzdan alım yaptı" sinyali
-güvenilmez olur (canlı dinleyiciye tek başına güvenmek 0 işleme yol açtı).
+RPC yükünde aç kalabilir — bu yüzden "takipteki cüzdan alım yaptı" sinyali tek
+başına WS'e bağlı olduğunda güvenilmez olur (0 işleme yol açtı).
 
-Bu servis bunun yerine her döngüde her takip edilen cüzdanın SON işlemlerini
-Helius **Enhanced Transactions** ile (cüzdan başına TEK ucuz istek) çeker ve
-yalnızca **taze** (son `fresh_seconds`) ALIMLARI `handle_trade_event`'e yönlendirir.
-Böylece WS kaçırsa bile alımlar yakalanır. Çift işlemi önlemek için:
-  - Alert.signature ile (işlem/bildirim oluşmuşsa) zaten işlenmiş sayılır,
-  - ek olarak `should_process(sig)` (Redis TTL) ile tekrar işleme engellenir.
+KREDİ KRİTİK: Bu servis UCUZ RPC çağrılarını kullanır:
+  - `getSignaturesForAddress` (1 kredi) ile her cüzdanın SON imzalarını çeker,
+  - yalnızca TAZE (son `fresh_seconds`) ve daha önce İŞLENMEMİŞ imzalar için
+    `getTransaction` (1 kredi) çağırır.
+Böylece pahalı `getEnhancedTransactionsByAddress` (10+ kredi/çağrı) KULLANILMAZ;
+boştaki bir cüzdan döngü başına yalnızca ~1 kredi tüketir.
 
-Yalnızca TAZE alımlar işlenir; cüzdan takibe yeni alındığında geçmiş alımları
-kopyalamayız (yalnızca bundan sonra yaptıkları).
+Çift işlemi önlemek için: Alert.signature + `should_process(sig)` (Redis TTL).
+Yalnızca TAZE alımlar işlenir (cüzdan yeni takibe alındığında geçmiş alımları
+kopyalamayız).
 """
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ import time
 from sqlalchemy.orm import Session
 
 from ..adapters.base import ChainProvider, MarketProvider
-from ..adapters.pumpfun import normalize_enhanced_transaction
+from ..adapters.pumpfun import normalize_rpc_transaction
 from ..adapters.pumpportal import PumpPortalTrade, PumpPortalTrader
 from ..core.analysis.swap_detection import detect_swap
 from ..models import Alert, Wallet, WalletStatus
@@ -39,44 +40,52 @@ def poll_tracked_wallets(
     market: MarketProvider | None = None,
     notifier: TelegramNotifier | None = None,
     signer: PumpPortalTrader | None = None,
-    per_wallet: int = 8,
+    per_wallet: int = 6,
     fresh_seconds: int = 900,
     should_process=None,
 ) -> dict:
-    """Takip edilen cüzdanların taze alımlarını işleme hattına yönlendirir."""
-    if not hasattr(chain, "get_address_transactions"):
-        # Enhanced yoksa (Helius anahtarı yok) bu güvenilir yol devre dışı.
-        return {"polled": 0, "fresh_buys": 0, "triggered": 0, "skipped": "no_enhanced"}
-
+    """Takip edilen cüzdanların taze alımlarını işleme hattına yönlendirir (ucuz)."""
     from collections import Counter
     should_process = should_process or (lambda _sig: True)
     tracked = db.query(Wallet).filter(Wallet.status == WalletStatus.tracked.value).all()
     now = time.time()
-    fresh_buys = 0
+    fresh_txns = 0   # taze + yeni (getTransaction çekilen) işlem sayısı
     triggered = 0
     reasons: Counter = Counter()  # işlem AÇILMADIYSA gerçek sebepler (teşhis)
 
     for w in tracked:
         try:
-            txs = chain.get_address_transactions(w.address, limit=per_wallet)
+            sigs = chain.get_signatures_for_address(w.address, limit=per_wallet)  # ~1 kredi
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[WATCH] %s işlemleri alınamadı: %s", w.address[:6], exc)
+            logger.warning("[WATCH] %s imzaları alınamadı: %s", w.address[:6], exc)
             continue
-        for enh in txs or []:
-            ntx = normalize_enhanced_transaction(enh)
+        for s in sigs or []:
+            sig = s.get("signature") if isinstance(s, dict) else s
+            block_time = s.get("blockTime") if isinstance(s, dict) else None
+            if not sig:
+                continue
+            # TAZELİK filtresi imza listesinden (getTransaction'a GİTMEDEN) — kredi koruması
+            if block_time is not None and (now - block_time) > fresh_seconds:
+                continue
+            # dedup: zaten işlenmişse getTransaction'a hiç gitme
+            if db.query(Alert).filter(Alert.signature == sig).first():
+                continue
+            if not should_process(sig):
+                continue
+            try:
+                raw = chain.get_transaction(sig)  # ~1 kredi (yalnızca taze+yeni için)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[WATCH] getTransaction hatası %s: %s", sig[:8], exc)
+                continue
+            ntx = normalize_rpc_transaction(raw) if raw else None
             if ntx is None:
                 continue
             swap = detect_swap(ntx, w.address)
             if swap is None or swap.side != "buy":
                 continue
             if now - swap.block_time > fresh_seconds:
-                continue  # eski alım — kopyalama (yalnızca taze)
-            fresh_buys += 1
-            # dedup: işlem/bildirim zaten oluşmuşsa atla (çift işlem yok)
-            if db.query(Alert).filter(Alert.signature == swap.signature).first():
                 continue
-            if not should_process(swap.signature):
-                continue
+            fresh_txns += 1
             trade = PumpPortalTrade(
                 signature=swap.signature, trader=w.address, mint=swap.token_mint,
                 side="buy", sol_amount=swap.sol_amount, token_amount=swap.token_amount,
@@ -89,7 +98,6 @@ def poll_tracked_wallets(
                 if act == "buy" and res.get("traded"):
                     triggered += 1  # gerçekten paper/canlı işlem açıldı
                 elif act == "buy":
-                    # token kapısını geçti ama MOTOR açmadı (kapalı/limit/skor)
                     tb = res.get("trade_blocked")
                     reasons["motor: " + (", ".join(tb) if tb else "motor kapalı veya limit")[:80]] += 1
                 elif act == "skipped":
@@ -103,6 +111,6 @@ def poll_tracked_wallets(
                 reasons[f"HATA {type(exc).__name__}: {exc}"[:90]] += 1
 
     logger.info("[WATCH] tracked=%d fresh_buys=%d triggered=%d reasons=%s",
-                len(tracked), fresh_buys, triggered, dict(reasons.most_common(5)))
-    return {"polled": len(tracked), "fresh_buys": fresh_buys, "triggered": triggered,
+                len(tracked), fresh_txns, triggered, dict(reasons.most_common(5)))
+    return {"polled": len(tracked), "fresh_buys": fresh_txns, "triggered": triggered,
             "reasons": dict(reasons.most_common(5))}

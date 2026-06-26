@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     app_name: str = "Pump.fun Cüzdan Analizcisi"
     # SÜRÜM/BUILD numarası — her anlamlı güncellemede artar. Panelin üst barında
     # ve /health'te gösterilir; deploy'un doğru kodu aldığını buradan doğrularsın.
-    app_build: str = "10"
-    app_build_label: str = "nabız: dedup'tan bağımsız gerçek durum (son karar + paper alım)"
+    app_build: str = "11"
+    app_build_label: str = "poll ucuz RPC'ye geçti (Enhanced kredi yakımı bitti)"
     environment: Literal["development", "production", "test"] = "development"
     api_prefix: str = "/api"
     secret_key: str = Field(default="degistir-bu-anahtari", description="Uygulama imza anahtarı")
@@ -121,9 +121,10 @@ class Settings(BaseSettings):
     # --- Takip edilen cüzdan izleme (poll) ---
     # Canlı WS dinleyicisi olay kaçırabildiğinden, takip edilen cüzdanların taze
     # alımları periyodik POLL ile de yakalanır (işlem tetikleyici güvencesi).
-    # Her cüzdan için Enhanced ile TEK ucuz istek; sık ama ucuzdur.
-    tracked_poll_seconds: int = 45            # poll döngü aralığı (sn)
-    tracked_poll_per_wallet: int = 8          # her cüzdandan çekilecek son işlem sayısı
+    # UCUZ yol: cüzdan başına getSignaturesForAddress (~1 kredi) + yalnızca taze/yeni
+    # imza için getTransaction (~1 kredi). Boştaki cüzdan döngü başına ~1 kredi.
+    tracked_poll_seconds: int = 60            # poll döngü aralığı (sn)
+    tracked_poll_per_wallet: int = 6          # her cüzdandan çekilecek son imza sayısı
     tracked_poll_fresh_seconds: int = 900     # yalnızca son N sn içindeki alımlar işlenir
 
     # --- Eşikler (varsayılan; veritabanındaki settings tablosu önceliklidir) ---

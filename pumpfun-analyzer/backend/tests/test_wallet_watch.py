@@ -1,7 +1,9 @@
-"""Takip edilen cüzdan POLL izleyicisi — WS'e bağımlı olmadan işlem tetikler.
+"""Takip edilen cüzdan POLL izleyicisi — UCUZ yol (getSignaturesForAddress +
+getTransaction), WS'e bağımlı olmadan işlem tetikler.
 
-Enhanced ile çekilen TAZE bir alım, dengeli kapıyı geçen güvenli bir token için
-paper işlem açmalı; tekrar poll'da (dedup) ikinci işlem AÇILMAMALIDIR.
+Taze bir alım, dengeli kapıyı geçen güvenli bir token için paper işlem açmalı;
+tekrar poll'da (dedup) ikinci işlem AÇILMAMALI; eski (stale) imzalar için
+getTransaction'a HİÇ gidilmemeli (kredi koruması).
 """
 import time
 
@@ -18,32 +20,36 @@ WALLET = "WatchLeader1111111111111111111111111111111"
 MINT = "WatchDecentMint11111111111111111111111111111"
 
 
-def _enh_buy(wallet, mint, sig, ts):
+def _raw_buy(wallet, mint, ts, sig):
+    """jsonParsed RPC işlemi: cüzdan -1 SOL, +100 token (alım). İmza, imza
+    listesindekiyle TUTARLI (üretimde getTransaction(sig).signatures[0]==sig)."""
     return {
-        "signature": sig, "timestamp": ts, "slot": ts, "fee": 5000,
-        "source": "PUMP_FUN", "transactionError": None,
-        "instructions": [{"programId": PUMP_FUN_PROGRAM, "innerInstructions": []}],
-        "accountData": [{"account": wallet, "nativeBalanceChange": -1_000_000_000,
-            "tokenBalanceChanges": [{"userAccount": wallet, "mint": mint,
-                "rawTokenAmount": {"tokenAmount": "100000000", "decimals": 6}}]}],
+        "blockTime": ts, "slot": ts,
+        "transaction": {"signatures": [sig], "message": {
+            "accountKeys": [{"pubkey": wallet}],
+            "instructions": [{"programId": PUMP_FUN_PROGRAM}],
+        }},
+        "meta": {
+            "fee": 5000, "preBalances": [2_000_000_000], "postBalances": [1_000_000_000],
+            "preTokenBalances": [],
+            "postTokenBalances": [{"owner": wallet, "mint": mint, "uiTokenAmount": {"uiAmount": 100}}],
+        },
     }
 
 
 class PollChain(ChainProvider):
-    """Enhanced destekli + olgun güvenli token verisi sunan sahte sağlayıcı."""
+    """Ucuz yol için imza+işlem; ayrıca token değerlendirmesi (olgun güvenli)."""
     name = "pollchain"
 
-    def __init__(self, txs):
-        self._txs = txs
-
-    def get_address_transactions(self, address, limit=8, before=None, until=None, tx_type=None):
-        return self._txs
+    def __init__(self, sig_times: dict, raw_by_sig: dict):
+        self._sig_times = sig_times      # {sig: blockTime}
+        self._raw = raw_by_sig           # {sig: raw_tx}
 
     def get_signatures_for_address(self, address, limit=100):
-        return []
+        return [{"signature": s, "blockTime": bt} for s, bt in self._sig_times.items()]
 
     def get_transaction(self, signature):
-        return None
+        return self._raw.get(signature)
 
     def get_token_supply(self, mint):
         return {"value": {"uiAmount": 1_000_000_000}}
@@ -70,50 +76,51 @@ def _reset():
     reset_engine(); yield; reset_engine()
 
 
+def _balanced_risk():
+    return {"enabled": True, "mode": "paper", "token_gate": "balanced",
+            "fixed_sol_amount": 0.05, "max_position_sol": 0.2, "max_daily_spend_sol": 1.0,
+            "min_liquidity_sol": 5, "min_wallet_score": 65, "min_token_score": 70}
+
+
 def test_poll_triggers_trade_on_fresh_buy_and_dedups(db):
     w = Wallet(address=WALLET, status=WalletStatus.tracked.value, latest_score=85.0, risk_flags=[])
     db.add(w); db.commit()
-    set_setting(db, "risk", {"enabled": True, "mode": "paper", "token_gate": "balanced",
-                             "fixed_sol_amount": 0.05, "max_position_sol": 0.2,
-                             "max_daily_spend_sol": 1.0, "min_liquidity_sol": 5,
-                             "min_wallet_score": 70, "min_token_score": 70})
-    reset_engine()
+    set_setting(db, "risk", _balanced_risk()); reset_engine()
     now = int(time.time())
-    chain = PollChain([_enh_buy(WALLET, MINT, "watch-buy-1", now - 60)])
+    chain = PollChain({"watch-buy-1": now - 60}, {"watch-buy-1": _raw_buy(WALLET, MINT, now - 60, "watch-buy-1")})
 
-    res1 = poll_tracked_wallets(db, chain, market=DecentMarket(), per_wallet=8, fresh_seconds=900)
+    res1 = poll_tracked_wallets(db, chain, market=DecentMarket(), per_wallet=6, fresh_seconds=900)
     assert res1["fresh_buys"] == 1
     assert res1["triggered"] == 1
     assert db.query(PaperTrade).filter(PaperTrade.source_signature == "watch-buy-1",
                                        PaperTrade.side == "buy").count() == 1
 
-    # İkinci poll: aynı imza => Alert dedup => çift işlem YOK
-    res2 = poll_tracked_wallets(db, chain, market=DecentMarket(), per_wallet=8, fresh_seconds=900)
-    assert res2["triggered"] == 0
+    res2 = poll_tracked_wallets(db, chain, market=DecentMarket(), per_wallet=6, fresh_seconds=900)
+    assert res2["triggered"] == 0  # Alert dedup => çift işlem yok
     assert db.query(PaperTrade).filter(PaperTrade.source_signature == "watch-buy-1",
                                        PaperTrade.side == "buy").count() == 1
+
+
+def test_poll_ignores_stale_buys_without_fetching(db):
+    w = Wallet(address="WatchLeaderStale2222222222222222222222222",
+               status=WalletStatus.tracked.value, latest_score=85.0, risk_flags=[])
+    db.add(w); db.commit()
+    set_setting(db, "risk", _balanced_risk()); reset_engine()
+    old = int(time.time()) - 7200  # 2 saat önce => taze değil
+    # raw_by_sig BOŞ: stale imza için getTransaction çağrılmamalı (yoksa KeyError/None)
+    chain = PollChain({"watch-stale-1": old}, {})
+    res = poll_tracked_wallets(db, chain, market=DecentMarket(), per_wallet=6, fresh_seconds=900)
+    assert res["fresh_buys"] == 0
+    assert res["triggered"] == 0
 
 
 def test_poll_task_writes_panel_heartbeat(db):
     """Poll görevi durumunu Loglar'a (AuditLog category=watch) yazar; 20 dk throttle."""
     from app.models import AuditLog
     from app.workers.tasks import poll_tracked_wallets as task
+    # Ağ çağrısı olmasın diye takip cüzdanlarını temizle (poll boş döner)
+    db.query(Wallet).filter(Wallet.status == WalletStatus.tracked.value).delete(); db.commit()
     db.query(AuditLog).filter(AuditLog.category == "watch").delete(); db.commit()
     task(); task()  # ikinci çağrı throttle yüzünden yazmamalı
     db.expire_all()
     assert db.query(AuditLog).filter(AuditLog.category == "watch").count() == 1
-
-
-def test_poll_ignores_stale_buys(db):
-    w = Wallet(address="WatchLeaderStale2222222222222222222222222",
-               status=WalletStatus.tracked.value, latest_score=85.0, risk_flags=[])
-    db.add(w); db.commit()
-    set_setting(db, "risk", {"enabled": True, "mode": "paper", "token_gate": "balanced",
-                             "fixed_sol_amount": 0.05, "min_liquidity_sol": 5,
-                             "min_wallet_score": 70})
-    reset_engine()
-    old = int(time.time()) - 7200  # 2 saat önce => taze değil
-    chain = PollChain([_enh_buy(w.address, "StaleMint333333333333333333333333333333333", "watch-stale-1", old)])
-    res = poll_tracked_wallets(db, chain, market=DecentMarket(), per_wallet=8, fresh_seconds=900)
-    assert res["fresh_buys"] == 0
-    assert res["triggered"] == 0
