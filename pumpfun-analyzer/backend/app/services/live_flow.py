@@ -37,6 +37,7 @@ from .token_analysis import TokenAssessment, assess_token
 logger = logging.getLogger(__name__)
 
 _engine: CopyTradeEngine | None = None
+_engine_reset_token: str | None = None
 
 
 def _audit(db: Session, level: str, message: str, context: dict) -> None:
@@ -79,11 +80,17 @@ def _risk_config(db: Session) -> RiskConfig:
 
 
 def get_engine(db: Session, signer=None) -> CopyTradeEngine:
-    """Süreç-ömürlü kopya işlem motoru (günlük durum korunur, ayarlar tazelenir)."""
-    global _engine
+    """Süreç-ömürlü kopya işlem motoru (günlük durum korunur, ayarlar tazelenir).
+
+    Paper sıfırlama (paper_reset token'ı) değiştiyse motoru süreçler arası SIFIRLAR
+    — böylece web'den sıfırlama yapılınca worker'daki bellek-içi pozisyonlar da
+    temizlenir."""
+    global _engine, _engine_reset_token
     cfg = _risk_config(db)
-    if _engine is None:
+    reset_token = (get_setting(db, "paper_reset") or {}).get("token")
+    if _engine is None or reset_token != _engine_reset_token:
         _engine = CopyTradeEngine(cfg, signer=signer)
+        _engine_reset_token = reset_token
     else:
         _engine.cfg = cfg  # günlük harcama/zarar ve paper pozisyonları korunur
         if signer is not None:

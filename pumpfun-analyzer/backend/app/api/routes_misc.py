@@ -110,6 +110,27 @@ def emergency_stop(close_positions: bool = False, db: Session = Depends(get_db))
             "detail": "Yeni işlemler durduruldu" + (" ve açık pozisyonlar kapatılacak" if close_positions else "")}
 
 
+@trading_router.post("/reset-paper")
+def reset_paper(db: Session = Depends(get_db)):
+    """Paper kâr/zarar istatistiğini SIFIRLA: tüm paper işlemleri ve açık pozisyon
+    durumunu siler, motoru tazeler (temiz ölçüm). Canlı işlemlere DOKUNMAZ."""
+    import time as _t
+    n = db.query(PaperTrade).delete()
+    settings_service.set_setting(db, "position_state", {})
+    # Worker'daki süreç-ömürlü paper motorunun da sıfırlanması için token bump
+    settings_service.set_setting(db, "paper_reset", {"token": str(_t.time())})
+    db.add(AuditLog(level="warning", category="trading",
+                    message=f"Paper kâr/zarar SIFIRLANDI ({n} işlem silindi)", context={"deleted": n}))
+    db.commit()
+    # Bu süreçteki motoru hemen sıfırla (web süreci)
+    try:
+        from ..services.live_flow import reset_engine
+        reset_engine()
+    except Exception:  # noqa: BLE001
+        pass
+    return {"ok": True, "deleted": n}
+
+
 @trading_router.get("/copy-performance")
 def copy_performance(include_blocked: bool = True, db: Session = Depends(get_db)):
     """Cüzdan-bazlı KOPYA performansı: bizim paper sonuçlarımıza göre her takip

@@ -5,18 +5,35 @@ import { fetcher, apiSend, API_URL } from "@/lib/api";
 import { PageHeader } from "@/components/Confidence";
 import { StatCard, Section } from "@/components/ui";
 import { useToast } from "@/components/Toast";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { Loading } from "@/components/States";
-import { Download, TrendingUp, Target, Trophy, Flame } from "lucide-react";
+import { Download, TrendingUp, Target, Trophy, Flame, RotateCcw } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
 const tip = { background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 12 };
 
 export default function Performance() {
-  const { data: perf } = useSWR<any>("/stats/performance", fetcher, { refreshInterval: 20000 });
+  const { data: perf, mutate: mutPerf } = useSWR<any>("/stats/performance", fetcher, { refreshInterval: 20000 });
   const { data: sum } = useSWR<any>("/stats/trading-summary", fetcher, { refreshInterval: 15000 });
   const { data: copy, mutate: mutCopy } = useSWR<any[]>("/trading/copy-performance", fetcher, { refreshInterval: 20000 });
   const [amts, setAmts] = useState<Record<string, string>>({});
   const toast = useToast();
+  const { confirm, dialog } = useConfirm();
+
+  async function resetPaper() {
+    const ok = await confirm({
+      title: "Kâr/Zarar istatistiğini sıfırla",
+      body: "Tüm PAPER işlemler ve açık pozisyon kayıtları silinecek; temiz bir ölçümle baştan başlanacak. Canlı işlemlere dokunulmaz. Devam edilsin mi?",
+      confirmText: "Evet, sıfırla", danger: true,
+    });
+    if (!ok) return;
+    try {
+      const r: any = await apiSend("/trading/reset-paper", "POST");
+      await Promise.all([mutPerf(), mutCopy()]);
+      toast("success", `Sıfırlandı (${r.deleted ?? 0} işlem silindi)`);
+    } catch (e: any) { toast("error", e?.message || "Sıfırlanamadı"); }
+  }
+
   if (!perf) return <Loading />;
 
   async function saveAmount(addr: string) {
@@ -30,10 +47,14 @@ export default function Performance() {
 
   return (
     <div>
+      {dialog}
       <PageHeader
         title="Performans"
         subtitle="Paper işlem sonuçları — kâr/zarar, başarı oranı ve eğri"
-        action={<a className="btn" href={`${API_URL}/export/trades.csv`}><Download size={15} /> İşlemleri dışa aktar</a>}
+        action={<div className="flex flex-wrap gap-2">
+          <a className="btn" href={`${API_URL}/export/trades.csv`}><Download size={15} /> Dışa aktar</a>
+          <button className="btn-danger" onClick={resetPaper}><RotateCcw size={15} /> Sıfırla</button>
+        </div>}
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
