@@ -51,11 +51,15 @@ export default function Leaderboard() {
     setCulling(true);
     try {
       const prev: any = await apiSend(`/wallets/cull?preset=${preset}&dry_run=true`, "POST");
+      const capTxt = prev.criteria.max_keep
+        ? `en fazla ${prev.criteria.max_keep} cüzdan`
+        : `${prev.kept} cüzdan (mevcut iyi set)`;
       const ok = await confirm({
         title: `Eleme önizleme — ${names[preset]}`,
         body: `${prev.tracked_before} takip cüzdanından ${prev.kept} KALIR, ${prev.dropped} elenir ` +
               `(${prev.dropped_quality} kalite + ${prev.dropped_cap} üst sınır). Düşenler "below_threshold"a alınır ` +
-              `(silinmez, toparlarsa geri döner) ve takip barı skor ${prev.criteria.min_score || "—"}'e yükseltilir. Uygulansın mı?`,
+              `(silinmez, toparlarsa geri döner). Takip barı skor ${prev.criteria.min_score || "—"}'e yükseltilir VE ` +
+              `kalıcı ÜST SINIR ${capTxt} olur — böylece keşif akışı sayıyı geri şişirmez. Uygulansın mı?`,
         confirmText: "Evet, ele", danger: true,
       });
       if (!ok) return;

@@ -41,6 +41,8 @@ celery_app.conf.update(
         "reevaluate-analyzed": {"task": "app.workers.tasks.reevaluate_analyzed", "schedule": 300.0},
         # Kopya performansı kötü cüzdanları otomatik ele (ardışık zarar / drawdown)
         "prune-underperformers": {"task": "app.workers.tasks.prune_underperformers", "schedule": 180.0},
+        # Takip sayısını üst sınırda tut (eleme sonrası keşif akışı geri şişirmesin)
+        "enforce-tracked-cap": {"task": "app.workers.tasks.enforce_tracked_cap", "schedule": 120.0},
     },
 )
 

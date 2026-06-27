@@ -15,7 +15,10 @@ DEFAULTS: dict[str, dict] = {
     "wallet_weights": WALLET_WEIGHTS,
     "wallet_eligibility": DEFAULT_ELIGIBILITY,
     "token_weights": TOKEN_WEIGHTS,
-    "thresholds": {"wallet": 55.0, "token": 70.0},  # cüzdan eşiği DÜŞÜK (geniş ağ): geniş al + kopya-performansı eler
+    # max_tracked: aynı anda takip edilecek EN FAZLA cüzdan (0 = sınırsız). Eleme
+    # (cull) bunu preset'e göre ayarlar; persist_wallet_score yeni takibi bu sınırda
+    # tutar — böylece eleme sonrası keşif akışı sayıyı geri şişirmez.
+    "thresholds": {"wallet": 55.0, "token": 70.0, "max_tracked": 0},
     "risk": {
         # Paper (simülasyon) işlem motoru varsayılan AÇIK — risksizdir; CANLI
         # (gerçek para) ayrı bir onaya bağlıdır (live_confirmed) ve KAPALI kalır.

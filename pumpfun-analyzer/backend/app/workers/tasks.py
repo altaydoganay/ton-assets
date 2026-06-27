@@ -313,6 +313,34 @@ def prune_underperformers() -> dict:
         db.close()
 
 
+@celery_app.task(name="app.workers.tasks.enforce_tracked_cap")
+def enforce_tracked_cap() -> dict:
+    """Takip edilen cüzdan sayısını üst sınırda (thresholds.max_tracked) tutar.
+
+    persist_wallet_score yeni promosyonları zaten sınırda durdurur; bu görev güvence:
+    herhangi bir yoldan sınır aşılırsa EN ZAYIF (skor+PnL) cüzdanları below_threshold'a
+    indirip sayıyı sınıra çeker. 0 = sınırsız (no-op)."""
+    from ..services.settings_service import get_setting
+    db = SessionLocal()
+    try:
+        cap = int((get_setting(db, "thresholds") or {}).get("max_tracked", 0) or 0)
+        if cap <= 0:
+            return {"cap": 0}
+        tracked = db.query(Wallet).filter(Wallet.status == WalletStatus.tracked.value).all()
+        if len(tracked) <= cap:
+            return {"cap": cap, "tracked": len(tracked), "demoted": 0}
+        tracked.sort(key=lambda w: ((w.latest_score or 0), (w.metrics or {}).get("realized_pnl_sol") or 0),
+                     reverse=True)
+        for w in tracked[cap:]:
+            w.status = WalletStatus.below_threshold.value
+        db.commit()
+        demoted = len(tracked) - cap
+        logger.info("[CAP] sınır=%d aşıldı, %d cüzdan indirildi", cap, demoted)
+        return {"cap": cap, "demoted": demoted}
+    finally:
+        db.close()
+
+
 @celery_app.task(name="app.workers.tasks.reanalyze_tracked")
 def reanalyze_tracked() -> dict:
     db = SessionLocal()

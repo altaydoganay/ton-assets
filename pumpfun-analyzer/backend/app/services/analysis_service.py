@@ -70,6 +70,20 @@ def persist_wallet_score(db: Session, wallet: Wallet, result: WalletScoreResult,
     else:
         wallet.status = WalletStatus.analyzed.value
 
+    # ÜST SINIR (cap): takip sayısı sınıra ulaştıysa YENİ cüzdanı takibe ALMA
+    # (mevcut takip korunur). Aksi halde keşif/analiz akışı eleme sonrası takip
+    # sayısını sürekli geri şişiriyordu (150'ye indir, 1 saatte 460'a çık). 0 = sınırsız.
+    if wallet.status == WalletStatus.tracked.value and not was_tracked:
+        from sqlalchemy import func
+        from .settings_service import get_setting
+        cap = int((get_setting(db, "thresholds") or {}).get("max_tracked", 0) or 0)
+        if cap > 0:
+            cnt = (db.query(func.count(Wallet.id))
+                   .filter(Wallet.status == WalletStatus.tracked.value, Wallet.id != wallet.id)
+                   .scalar() or 0)
+            if cnt >= cap:
+                wallet.status = WalletStatus.below_threshold.value  # sınır dolu; aday bekler
+
     db.commit()
     db.refresh(score)
     return score

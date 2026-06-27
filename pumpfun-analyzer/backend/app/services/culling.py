@@ -104,11 +104,17 @@ def cull_wallets(db: Session, preset: str, *, dry_run: bool = True) -> dict:
         w.status = WalletStatus.below_threshold.value
     for w in capped:
         w.status = WalletStatus.below_threshold.value
-    # Barı KALICI yükselt ki yeniden-değerlendirme demote'ları geri yüklemesin
-    if cfg["min_score"]:
-        th = get_setting(db, "thresholds")
-        if float(th.get("wallet", 55)) < cfg["min_score"]:
-            th["wallet"] = float(cfg["min_score"])
-            set_setting(db, "thresholds", th)
+    # Barı KALICI yükselt + ÜST SINIR koy ki keşif/yeniden-değerlendirme akışı
+    # eleme sonrası takip sayısını geri şişirmesin (asıl "460'a çıkıyor" sorunu).
+    th = get_setting(db, "thresholds")
+    changed = False
+    if cfg["min_score"] and float(th.get("wallet", 55)) < cfg["min_score"]:
+        th["wallet"] = float(cfg["min_score"]); changed = True
+    # max_tracked = kalan sayısı (üst sınır). light (max_keep None) => 0 (sınırsız).
+    new_cap = cfg["max_keep"] if cfg["max_keep"] else len(keep)
+    th["max_tracked"] = int(new_cap); changed = True
+    if changed:
+        set_setting(db, "thresholds", th)
     db.commit()
+    summary["max_tracked"] = int(new_cap)
     return summary
