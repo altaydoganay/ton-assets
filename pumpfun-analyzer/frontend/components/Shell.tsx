@@ -11,6 +11,8 @@ import {
 import { ThemeToggle } from "./ThemeToggle";
 import { ListenerStatus } from "./ListenerStatus";
 import { BrandLockup } from "./BrandMark";
+import { Celebrations } from "./Celebrations";
+import { SoundToggle } from "./SoundToggle";
 
 const NAV = [
   { group: "Genel", items: [
@@ -102,10 +104,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex items-center gap-3">
             <span className="hidden text-xs muted sm:inline">Yatırım tavsiyesi değildir · Kârlılık garantisi yoktur</span>
+            <SoundToggle />
             <ThemeToggle />
           </div>
         </header>
         <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
+        <Celebrations />
       </div>
     </div>
   );

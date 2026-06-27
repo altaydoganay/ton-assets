@@ -15,14 +15,19 @@ export function Confidence({ value }: { value?: number | null }) {
   );
 }
 
-export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: React.ReactNode }) {
+export function PageHeader({
+  title, subtitle, action, icon,
+}: { title: string; subtitle?: string; action?: React.ReactNode; icon?: React.ReactNode }) {
   return (
-    <div className="mb-5 flex items-start justify-between">
-      <div>
-        <h1 className="text-2xl font-bold">{title}</h1>
-        {subtitle && <p className="muted text-sm mt-1">{subtitle}</p>}
+    <div className="page-band mb-5 flex items-start justify-between gap-4">
+      <div className="flex items-start gap-3">
+        {icon && <div className="page-band-ico grid h-11 w-11 shrink-0 place-items-center rounded-2xl">{icon}</div>}
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+          {subtitle && <p className="muted text-sm mt-1 max-w-2xl">{subtitle}</p>}
+        </div>
       </div>
-      {action}
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   );
 }

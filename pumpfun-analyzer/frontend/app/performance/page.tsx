@@ -50,7 +50,7 @@ export default function Performance() {
     <div>
       {dialog}
       <PageHeader
-        title="Performans"
+        title="Performans" icon={<TrendingUp size={22} />}
         subtitle="Paper işlem sonuçları — kâr/zarar, başarı oranı ve eğri"
         action={<div className="flex flex-wrap gap-2">
           <a className="btn" href={`${API_URL}/export/trades.csv`}><Download size={15} /> Dışa aktar</a>

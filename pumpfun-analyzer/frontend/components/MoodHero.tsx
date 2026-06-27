@@ -2,6 +2,7 @@
 import useSWR from "swr";
 import { fetcher } from "@/lib/api";
 import { BrandMark } from "./BrandMark";
+import { CountUp } from "./CountUp";
 import { Flame, Snowflake, Scale, Target, Layers, Coins, TrendingUp } from "lucide-react";
 
 type Mood = "fire" | "frost" | "calm";
@@ -80,7 +81,7 @@ export function MoodHero() {
         <div className="text-right">
           <div className="text-xs font-medium muted">Toplam Paper PnL</div>
           <div className="pnl-figure text-5xl font-black" style={{ color: pnlColor }}>
-            {up ? "+" : ""}{ov ? pnl.toFixed(3) : "—"}
+            {ov ? <CountUp value={pnl} decimals={3} signed /> : "—"}
             <span className="ml-1 text-xl font-bold">SOL</span>
           </div>
           {sum && (

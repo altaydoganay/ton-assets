@@ -5,7 +5,8 @@ import { fetcher, shortAddr } from "@/lib/api";
 import { StatCard, Section } from "@/components/ui";
 import { ScoreBadge } from "@/components/ScoreBadge";
 import { MoodHero } from "@/components/MoodHero";
-import { Wallet, Coins, Bell, TrendingUp, ArrowRight, Activity } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
+import { Wallet, Coins, Bell, TrendingUp, ArrowRight, Activity, Sparkles } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
@@ -129,5 +130,5 @@ export default function Overview() {
 }
 
 function Empty({ label = "Veri toplandıkça burada görünecek" }: { label?: string }) {
-  return <div className="flex h-[200px] items-center justify-center text-sm muted">{label}</div>;
+  return <EmptyState icon={Sparkles} title={label} hint="Sistem çalıştıkça otomatik dolar." />;
 }

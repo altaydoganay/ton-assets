@@ -7,7 +7,8 @@ import { PageHeader } from "@/components/Confidence";
 import { Section } from "@/components/ui";
 import { Loading } from "@/components/States";
 import { useToast } from "@/components/Toast";
-import { Trophy, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw } from "lucide-react";
+import { CountUp } from "@/components/CountUp";
+import { Trophy, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Crown, Medal, Award } from "lucide-react";
 
 type Row = Record<string, any>;
 const COLS: { key: string; label: string; fmt?: (v: any, r?: Row) => string; right?: boolean }[] = [
@@ -84,6 +85,11 @@ export default function Leaderboard() {
     const av = a[sortKey] ?? -Infinity, bv = b[sortKey] ?? -Infinity;
     return (av < bv ? -1 : av > bv ? 1 : 0) * dir;
   });
+  // Podyum: en çok KAZANDIRAN ilk 3 (sıralamadan bağımsız)
+  const podium = [...data]
+    .filter((w) => (w.closed_trades ?? 0) > 0)
+    .sort((a, b) => (b.realized_pnl_sol ?? -Infinity) - (a.realized_pnl_sol ?? -Infinity))
+    .slice(0, 3);
   function sortBy(k: string) {
     if (k === sortKey) setDir((d) => (d === 1 ? -1 : 1));
     else { setSortKey(k); setDir(-1); }
@@ -94,7 +100,7 @@ export default function Leaderboard() {
 
   return (
     <div>
-      <PageHeader title="🏆 Cüzdan Sıralaması"
+      <PageHeader title="Cüzdan Sıralaması" icon={<Trophy size={22} />}
         subtitle="Takip ettiğimiz cüzdanların KENDİ al-sat performansı. Başlıklara tıklayıp sırala — kim ne kadar kazanıyor net gör."
         action={
           <button className="btn" onClick={rescan} disabled={scanning} title="Mevcut cüzdanları yeni kriterlerle yeniden puanlar (kredi harcamaz)">
@@ -102,6 +108,35 @@ export default function Leaderboard() {
             {scanning ? "Taranıyor…" : "Yeniden Tara"}
           </button>
         } />
+
+      {/* Podyum — en çok kazandıran ilk 3 cüzdan */}
+      {podium.length >= 3 && (
+        <div className="mb-4 grid grid-cols-3 gap-3">
+          {[podium[1], podium[0], podium[2]].map((w, idx) => {
+            const rank = idx === 1 ? 1 : idx === 0 ? 2 : 3; // ortadaki birinci
+            const meta = {
+              1: { cls: "podium-1", ico: Crown, col: "#fbbf24", lift: "md:-mt-3", h: "py-5" },
+              2: { cls: "podium-2", ico: Medal, col: "#cbd5e1", lift: "md:mt-2", h: "py-4" },
+              3: { cls: "podium-3", ico: Award, col: "#f59e0b", lift: "md:mt-3", h: "py-4" },
+            }[rank]!;
+            const Ico = meta.ico;
+            return (
+              <Link key={w.address} href={`/wallets/${w.address}`}
+                className={`card podium ${meta.cls} ${meta.lift} ${meta.h} flex flex-col items-center text-center shine`}>
+                <div className="podium-medal mb-2 h-10 w-10" style={{ background: `color-mix(in srgb, ${meta.col} 22%, transparent)`, color: meta.col }}>
+                  <Ico size={20} />
+                </div>
+                <div className="font-mono text-xs font-semibold">{w.label || shortAddr(w.address)}</div>
+                <div className="mt-1 text-lg font-black" style={{ color: w.realized_pnl_sol >= 0 ? "var(--emerald)" : "var(--rose)" }}>
+                  <CountUp value={w.realized_pnl_sol ?? 0} decimals={3} signed suffix=" ◎" />
+                </div>
+                <div className="mt-0.5 text-[11px] muted">Puan {Math.round(w.score ?? 0)} · %{Math.round((w.win_rate || 0) * 100)} başarı</div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+
       {backlog && (backlog.pending > 0 || isRunning) && (
         <div className="card mb-4" style={{ borderColor: "var(--amber)", borderWidth: 1 }}>
           <div className="flex flex-wrap items-center justify-between gap-3">
