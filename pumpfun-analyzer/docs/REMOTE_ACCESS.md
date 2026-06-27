@@ -12,7 +12,28 @@ yalnızca **senin cihazlarının** eriştiği özel bir ağ (Tailscale VPN) kull
 
 ## Kurulum
 
-### 1) Sunucuda (panelin docker'la çalıştığı makine)
+### Windows + Docker Desktop kullanıyorsan
+Tailscale, Docker/WSL içine değil **Windows host'una** kurulur. `bash` script'i
+Windows'ta çalışmaz (`/bin/bash` yok hatası alırsın) — bunun yerine:
+
+**Kolay yol (GUI):**
+1. https://tailscale.com/download/windows adresinden indir, kur, hesabınla giriş yap.
+2. Görev çubuğundaki Tailscale simgesine sağ tık → cihazının IP'sini gör (ör. `100.92.14.3`),
+   veya PowerShell'de: `& "C:\Program Files\Tailscale\tailscale.exe" ip -4`
+3. Telefona Tailscale'i kur, **aynı hesapla** giriş yap, bağlan.
+4. Telefon tarayıcısında **`http://<windows-tailscale-ip>:3000`** aç.
+
+**Script ile (PowerShell):**
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup-tailscale.ps1
+```
+Tailscale'i indirir/kurar, ağa bağlar ve erişeceğin adresi yazar.
+
+> Docker Desktop yayınlanan portları (3000/8000) Windows host'una bağlar; Tailscale
+> IP'si onlara ulaşır. Telefon bağlanamazsa: Docker Desktop açık mı + Windows Güvenlik
+> Duvarı Tailscale'e izin veriyor mu kontrol et.
+
+### Linux sunucuda
 ```bash
 bash scripts/setup-tailscale.sh
 ```
