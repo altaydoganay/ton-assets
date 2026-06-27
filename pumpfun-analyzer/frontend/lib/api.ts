@@ -1,5 +1,18 @@
-export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+// API adresini ÇALIŞMA ANINDA belirle ki panel hangi cihazdan/host'tan açılırsa
+// açılsın (telefon, uzak IP, Tailscale) doğru backend'e gitsin:
+//   1) NEXT_PUBLIC_API_URL tanımlıysa onu kullan (reverse-proxy/özel domain).
+//   2) Tarayıcıda: sayfanın açıldığı host + :8000/api (compose varsayılanı) —
+//      böylece http://<sunucu-ip>:3000 açınca API otomatik http://<sunucu-ip>:8000'e gider.
+//   3) SSR fallback (localhost).
+function resolveApiUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  if (typeof window !== "undefined") {
+    return `${window.location.protocol}//${window.location.hostname}:8000/api`;
+  }
+  return "http://localhost:8000/api";
+}
+
+export const API_URL = resolveApiUrl();
 
 export class ApiError extends Error {
   status: number;
