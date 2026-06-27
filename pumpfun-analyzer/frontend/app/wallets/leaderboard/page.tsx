@@ -23,9 +23,11 @@ const COLS: { key: string; label: string; fmt?: (v: any, r?: Row) => string; rig
 
 export default function Leaderboard() {
   const { data, mutate } = useSWR<Row[]>("/wallets/leaderboard", fetcher, { refreshInterval: 30000 });
+  const { data: backlog, mutate: mutBacklog } = useSWR<any>("/setup/backlog", fetcher, { refreshInterval: 15000 });
   const [sortKey, setSortKey] = useState("score");
   const [dir, setDir] = useState<1 | -1>(-1);
   const [scanning, setScanning] = useState(false);
+  const [draining, setDraining] = useState(false);
   const toast = useToast();
 
   async function rescan() {
@@ -34,13 +36,27 @@ export default function Leaderboard() {
       const r: any = await apiSend("/wallets/rescan", "POST");
       await mutate();
       const promoted = r.to_tracked ?? 0;
+      const noData = r.skipped_no_data ?? 0;
       const remain = r.remaining ? ` · ${r.remaining} kaldı (tekrar çalıştır)` : "";
+      const hint = noData > 0 ? ` · ${noData} cüzdanın verisi yok → aşağıdan "Backlog Analizi" gerekir` : "";
       toast(promoted > 0 ? "success" : "info",
         `Tarandı: ${r.scanned ?? 0} cüzdan · +${promoted} yeni takibe alındı ` +
-        `(toplam takip: ${r.after_tracked ?? "?"})${remain}`);
+        `(toplam takip: ${r.after_tracked ?? "?"})${remain}${hint}`);
     } catch (e: any) {
       toast("error", e?.message || "Yeniden tarama başarısız");
     } finally { setScanning(false); }
+  }
+
+  async function drainBacklog(count: number) {
+    setDraining(true);
+    try {
+      const r: any = await apiSend(`/setup/backlog/analyze?count=${count}`, "POST");
+      await mutBacklog();
+      if (r.started) toast("success", `${r.target} cüzdanın analizi başladı (~${r.est_credits} kredi). İlerleme aşağıda güncellenecek.`);
+      else toast("info", r.message || "Backlog boş");
+    } catch (e: any) {
+      toast("error", e?.message || "Backlog analizi başlatılamadı");
+    } finally { setDraining(false); }
   }
 
   if (!data) return <Loading />;
@@ -67,6 +83,34 @@ export default function Leaderboard() {
             {scanning ? "Taranıyor…" : "Yeniden Tara"}
           </button>
         } />
+      {backlog && backlog.pending > 0 && (
+        <div className="card mb-4" style={{ borderColor: "var(--amber)", borderWidth: 1 }}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="font-semibold">🔍 Keşif Backlog'u: {backlog.pending.toLocaleString("tr-TR")} cüzdan analiz bekliyor</div>
+              <p className="text-xs muted mt-1 max-w-xl">
+                Bu cüzdanları yalnızca <b>adres</b> olarak biliyoruz; al-sat geçmişleri henüz zincirden çekilmedi.
+                Analiz etmek <b>Helius kredisi harcar</b> (~10 kredi/cüzdan). Ne kadar analiz edeceğini sen seç —
+                arka planda çalışır, durdurmak için tekrar başlatma.
+              </p>
+              {backlog.last_drain && (
+                <p className="text-xs muted mt-1">
+                  Son analiz: {backlog.last_drain.processed} işlendi · +{backlog.last_drain.tracked} takibe ·
+                  {" "}{backlog.last_drain.remaining?.toLocaleString?.("tr-TR") ?? backlog.last_drain.remaining} kaldı
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {[500, 2000, 5000].map((n) => (
+                <button key={n} className="btn" disabled={draining} onClick={() => drainBacklog(n)}>
+                  {n.toLocaleString("tr-TR")} analiz (~{(n * 10).toLocaleString("tr-TR")} kredi)
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       <Section title={`${rows.length} cüzdan · ${COLS.find((c) => c.key === sortKey)?.label}'a göre sıralı`}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

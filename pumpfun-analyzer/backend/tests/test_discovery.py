@@ -5,6 +5,7 @@ from app.models import Swap, Wallet, WalletStatus
 from app.services.discovery import (
     record_candidate,
     pending_candidates,
+    count_pending,
     analyze_discovered_batch,
     reevaluate_analyzed,
 )
@@ -54,6 +55,17 @@ def _seed_good_swaps(db, addr):
                         fee_sol=0.01, venue="pumpfun", block_time=t_sell, confirmation="finalized"))
             i += 1
     db.commit()
+
+
+def test_count_pending_only_unanalyzed_discovered(db):
+    db.query(Wallet).delete(); db.commit()
+    record_candidate(db, "PendA1111111111111111111111111111111111111")
+    record_candidate(db, "PendB2222222222222222222222222222222222222")
+    # analiz edilmiş bir discovered (last_analyzed dolu) => backlog'a SAYILMAZ
+    done = Wallet(address="DoneC33333333333333333333333333333333333333",
+                  status=WalletStatus.discovered.value, last_analyzed=datetime.now(timezone.utc))
+    db.add(done); db.commit()
+    assert count_pending(db) == 2
 
 
 def test_batch_promotes_quality_wallet_to_tracked(db):

@@ -40,6 +40,16 @@ def record_candidate(db: Session, address: str, source: str = "auto") -> bool:
     return True
 
 
+def count_pending(db: Session) -> int:
+    """Henüz analiz edilmemiş (ingest bekleyen) keşfedilmiş cüzdan sayısı.
+    Bunlar yalnızca ADRES olarak elimizde; işlem geçmişleri ZİNCİRDEN çekilmeli
+    (Helius kredisi). Bu yüzden 'depolanmış veriyle yeniden tarama' onları kapsamaz."""
+    from sqlalchemy import func
+    return int(db.query(func.count(Wallet.id)).filter(
+        Wallet.status == WalletStatus.discovered.value,
+        Wallet.last_analyzed.is_(None)).scalar() or 0)
+
+
 def pending_candidates(db: Session, limit: int) -> list[Wallet]:
     """Henüz analiz edilmemiş keşfedilmiş cüzdanlar.
 

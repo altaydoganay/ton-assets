@@ -95,6 +95,43 @@ def toggle_discovery(enabled: bool = Query(...), db: Session = Depends(get_db)):
     return {"discovery_enabled": bool(val.get("discovery_enabled"))}
 
 
+@setup_router.get("/backlog")
+def backlog_status(db: Session = Depends(get_db)):
+    """Keşif backlog'u: analiz bekleyen (yalnızca ADRES olarak elimizdeki) cüzdan
+    sayısı + son toplu analiz özeti. Bu cüzdanların işlem geçmişi henüz ZİNCİRDEN
+    çekilmedi; analiz Helius kredisi harcar (~10 kredi/cüzdan)."""
+    from ..services.discovery import count_pending
+    from ..services.settings_service import get_setting
+    pending = count_pending(db)
+    return {
+        "pending": pending,
+        "est_credits": pending * 10,  # kaba tahmin: ~1 Enhanced isteği/cüzdan
+        "last_drain": get_setting(db, "_meta_backlog_drain"),
+    }
+
+
+@setup_router.post("/backlog/analyze")
+def analyze_backlog(count: int = Query(2000, ge=1, le=20000), db: Session = Depends(get_db)):
+    """Backlog'tan `count` cüzdanı toplu analiz et (ingest + puanla). Arka planda
+    (Celery) çalışır; HTTP hemen döner. İlerleme /setup/backlog'tan izlenir.
+    KREDİ HARCAR: her cüzdan ~10 Helius kredisi. Kullanıcı miktarı kendi seçer."""
+    from ..services.discovery import count_pending
+    from ..workers.tasks import drain_backlog
+    pending = count_pending(db)
+    if pending == 0:
+        return {"started": False, "pending": 0, "message": "Backlog boş — analiz bekleyen cüzdan yok."}
+    target = min(count, pending)
+    try:
+        drain_backlog.delay(count=target)
+        started = True
+    except Exception as exc:  # noqa: BLE001 — worker/Redis yoksa açıklayıcı dön
+        raise HTTPException(503, f"Arka plan işçisine ulaşılamadı (worker/Redis): {exc}")
+    db.add(AuditLog(level="info", category="discovery",
+                    message=f"Backlog analizi başlatıldı: {target} cüzdan (~{target*10} kredi)"))
+    db.commit()
+    return {"started": started, "target": target, "pending": pending, "est_credits": target * 10}
+
+
 # --- Risk profilleri ---
 @setup_router.get("/risk-profiles")
 def risk_profiles():

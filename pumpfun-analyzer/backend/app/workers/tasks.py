@@ -292,3 +292,46 @@ def reanalyze_tracked() -> dict:
         return {"queued": len(tracked)}
     finally:
         db.close()
+
+
+@celery_app.task(name="app.workers.tasks.drain_backlog")
+def drain_backlog(count: int = 2000, ingest_limit: int = 80, budget_seconds: int = 300) -> dict:
+    """Keşif BACKLOG'unu toplu işler: `discovered` (yalnızca adres) cüzdanların
+    işlem geçmişini ZİNCİRDEN çeker (Helius kredisi) ve puanlar.
+
+    Tek seferlik/manuel hızlandırma içindir — beat'in yavaş damlama hızı yerine
+    kullanıcı panelden tetikler. Her cüzdan ~1 Enhanced isteği ≈ ~10 kredi.
+    `count` veya `budget_seconds` dolunca durur; özeti _meta_backlog_drain'e yazar
+    ki panel ilerlemeyi göstersin. Singleton kilit: paralel drain olmaz."""
+    import time as _t
+    from datetime import datetime, timezone
+    from ..services.discovery import analyze_discovered_batch, count_pending
+    from ..services.settings_service import set_setting
+
+    db = SessionLocal()
+    try:
+      with _singleton("drain_backlog", ttl=budget_seconds + 60) as got:
+        if not got:
+            return {"skipped": "zaten çalışıyor"}
+        try:
+            chain = build_chain_provider(throttle=True)  # keşif: RPS/kredi koruması açık
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Zincir sağlayıcı kurulamadı (drain): %s", exc)
+            return {"error": "provider"}
+        start = _t.monotonic()
+        processed = tracked = 0
+        while processed < count and (_t.monotonic() - start) < budget_seconds:
+            chunk = min(25, count - processed)
+            res = analyze_discovered_batch(db, chain, limit=chunk, ingest_limit=ingest_limit)
+            if not res:
+                break  # backlog bitti ya da RPC down (analyze_discovered_batch break eder)
+            processed += len(res)
+            tracked += sum(1 for r in res if r.get("tracked"))
+        remaining = count_pending(db)
+        summary = {"processed": processed, "tracked": tracked, "remaining": remaining,
+                   "ts": datetime.now(timezone.utc).isoformat()}
+        set_setting(db, "_meta_backlog_drain", summary)
+        logger.info("[DRAIN] processed=%d tracked=%d remaining=%d", processed, tracked, remaining)
+        return summary
+    finally:
+        db.close()
