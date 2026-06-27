@@ -172,3 +172,113 @@ body {
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--brand); }
+
+/* ============================================================
+   ALTAY ANALYSIS BOT — marka + duygu-tepkili (mood) hero
+   ============================================================ */
+
+/* Marka logosu (animasyonlu monogram) */
+.brandmark { display: inline-grid; place-items: center; filter: drop-shadow(0 4px 12px color-mix(in srgb, var(--brand) 45%, transparent)); }
+.brandmark svg { display: block; }
+@media (prefers-reduced-motion: no-preference) {
+  .brandmark { animation: breathe 3.6s ease-in-out infinite; }
+}
+@keyframes breathe { 0%,100% { transform: scale(1); filter: drop-shadow(0 4px 12px color-mix(in srgb, var(--brand) 35%, transparent)); }
+                     50% { transform: scale(1.05); filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--brand) 70%, transparent)); } }
+
+/* Animasyonlu degrade wordmark */
+.wordmark {
+  background: linear-gradient(90deg, var(--brand), var(--sky), var(--violet), var(--brand));
+  background-size: 300% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .wordmark { animation: auroraShift 8s ease infinite; }
+}
+
+/* ---- MOOD HERO ---- */
+.mood-hero {
+  position: relative; overflow: hidden;
+  border-radius: 28px; border: 1px solid var(--border); padding: 1.75rem;
+  isolation: isolate;
+  transition: border-color .4s ease, box-shadow .4s ease;
+}
+.mood-hero .mood-bg { position: absolute; inset: 0; z-index: -2; transition: opacity .6s ease; }
+.mood-hero .mood-particles { position: absolute; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+
+/* Kâr: sıcak/alevli */
+.mood-fire { border-color: color-mix(in srgb, var(--amber) 45%, var(--border)); box-shadow: 0 24px 60px -28px color-mix(in srgb, #f97316 75%, transparent); }
+.mood-fire .mood-bg {
+  background:
+    radial-gradient(620px 280px at 50% 118%, color-mix(in srgb, #f97316 38%, transparent), transparent 62%),
+    radial-gradient(520px 260px at 88% 0%, color-mix(in srgb, var(--amber) 26%, transparent), transparent 60%),
+    linear-gradient(120deg, color-mix(in srgb, #ef4444 12%, var(--card)), var(--card) 72%);
+}
+/* Zarar: soğuk/buzlu */
+.mood-frost { border-color: color-mix(in srgb, var(--sky) 42%, var(--border)); box-shadow: 0 24px 60px -28px color-mix(in srgb, #3b82f6 65%, transparent); }
+.mood-frost .mood-bg {
+  background:
+    radial-gradient(620px 300px at 50% -15%, color-mix(in srgb, #38bdf8 30%, transparent), transparent 60%),
+    radial-gradient(480px 240px at 12% 110%, color-mix(in srgb, var(--rose) 20%, transparent), transparent 60%),
+    linear-gradient(120deg, color-mix(in srgb, #3b82f6 12%, var(--card)), var(--card) 72%);
+}
+/* Başabaş: sakin marka rengi */
+.mood-calm { border-color: color-mix(in srgb, var(--brand) 35%, var(--border)); box-shadow: var(--glow); }
+.mood-calm .mood-bg {
+  background:
+    radial-gradient(600px 280px at 100% 0%, color-mix(in srgb, var(--violet) 18%, transparent), transparent 60%),
+    linear-gradient(120deg, color-mix(in srgb, var(--brand) 14%, var(--card)), var(--card) 72%);
+}
+
+/* Alevler */
+.flame {
+  position: absolute; bottom: -28px; width: 70px; height: 110px;
+  background: linear-gradient(to top, #fde68a, #f97316 45%, #ef4444 78%, transparent 100%);
+  border-radius: 50% 50% 48% 48% / 72% 72% 36% 36%;
+  filter: blur(7px); opacity: 0; transform-origin: bottom center; mix-blend-mode: screen;
+}
+.ember, .snow { position: absolute; width: 5px; height: 5px; border-radius: 50%; opacity: 0; }
+.ember { bottom: -6px; background: radial-gradient(circle, #fde68a, #f97316 70%); filter: blur(.4px); }
+.snow { top: -8px; background: radial-gradient(circle, #e0f2fe, #7dd3fc 70%); filter: blur(.4px); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .flame { animation: flicker 1.5s ease-in-out infinite; }
+  .ember { animation: emberRise linear infinite; }
+  .snow  { animation: snowFall linear infinite; }
+  .mood-hero { animation: popIn .5s cubic-bezier(.2,.7,.2,1) both; }
+}
+@keyframes flicker {
+  0%,100% { transform: scaleY(1) scaleX(1) translateY(0); opacity: .85; }
+  25% { transform: scaleY(1.12) scaleX(.94) translateY(-3px); opacity: 1; }
+  50% { transform: scaleY(.9) scaleX(1.06) translateY(2px); opacity: .8; }
+  75% { transform: scaleY(1.07) scaleX(.97) translateY(-1px); opacity: .95; }
+}
+@keyframes emberRise { 0% { transform: translateY(0) scale(1); opacity: 0; } 15% { opacity: 1; } 100% { transform: translateY(-120px) scale(.2); opacity: 0; } }
+@keyframes snowFall  { 0% { transform: translateY(-10px) translateX(0); opacity: 0; } 15% { opacity: .9; } 100% { transform: translateY(150px) translateX(14px); opacity: 0; } }
+
+/* Büyük PnL sayacı parıltısı */
+.pnl-figure { font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+@media (prefers-reduced-motion: no-preference) { .pnl-figure { animation: countUp .6s ease both; } }
+
+/* canlı nokta (nabız) */
+.live-dot { position: relative; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--emerald); }
+.live-dot::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--emerald); opacity: .6; }
+@media (prefers-reduced-motion: no-preference) { .live-dot::after { animation: ping 1.8s cubic-bezier(0,0,.2,1) infinite; } }
+@keyframes ping { 75%,100% { transform: scale(2.2); opacity: 0; } }
+
+/* kart üstünde geçen ışık (shine) — sadece hover */
+.shine { position: relative; overflow: hidden; }
+.shine::after {
+  content: ""; position: absolute; top: 0; left: -120%; width: 60%; height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,.18), transparent);
+  transform: skewX(-18deg); transition: left .7s ease;
+}
+.shine:hover::after { left: 140%; }
+
+/* mini chip (hero istatistik) */
+.hchip {
+  display: inline-flex; align-items: center; gap: .4rem;
+  border-radius: 999px; padding: .35rem .7rem; font-size: .75rem; font-weight: 600;
+  background: color-mix(in srgb, var(--card) 70%, transparent);
+  border: 1px solid var(--border); backdrop-filter: blur(4px);
+}

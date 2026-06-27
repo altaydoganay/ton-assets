@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 import { ListenerStatus } from "./ListenerStatus";
+import { BrandLockup } from "./BrandMark";
 
 const NAV = [
   { group: "Genel", items: [
@@ -73,9 +74,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen overflow-hidden">
       {/* Masaüstü kenar çubuğu */}
       <aside className="hidden w-64 shrink-0 flex-col border-r p-3 md:flex" style={{ background: "var(--bg2)" }}>
-        <div className="mb-4 px-2">
-          <div className="text-lg font-bold brand">Pump.fun Analiz</div>
-          <div className="text-xs muted">Cüzdan & Token İstihbaratı</div>
+        <div className="mb-4 px-1 pt-1">
+          <BrandLockup size={34} />
         </div>
         <div className="flex-1 overflow-y-auto">{nav}</div>
       </aside>
@@ -85,8 +85,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <div className="fixed inset-0 z-40 md:hidden">
           <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
           <aside className="absolute left-0 top-0 h-full w-72 overflow-y-auto p-3" style={{ background: "var(--bg2)" }}>
-            <div className="mb-4 flex items-center justify-between px-2">
-              <div className="text-lg font-bold brand">Pump.fun Analiz</div>
+            <div className="mb-4 flex items-center justify-between px-1">
+              <BrandLockup size={32} subtitle={false} />
               <button className="btn-ghost" onClick={() => setOpen(false)}><X size={18} /></button>
             </div>
             {nav}

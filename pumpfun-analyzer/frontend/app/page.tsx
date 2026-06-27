@@ -4,7 +4,8 @@ import Link from "next/link";
 import { fetcher, shortAddr } from "@/lib/api";
 import { StatCard, Section } from "@/components/ui";
 import { ScoreBadge } from "@/components/ScoreBadge";
-import { Wallet, Coins, Bell, TrendingUp, Sparkles, Trophy, ArrowRight, Activity } from "lucide-react";
+import { MoodHero } from "@/components/MoodHero";
+import { Wallet, Coins, Bell, TrendingUp, ArrowRight, Activity } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
@@ -23,31 +24,7 @@ export default function Overview() {
 
   return (
     <div>
-      {/* WOW hero */}
-      <div className="hero mb-5">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div className="mb-1 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium"
-              style={{ borderColor: "color-mix(in srgb, var(--brand) 40%, var(--border))", color: "var(--brand)" }}>
-              <Sparkles size={13} /> Pump.fun Cüzdan İstihbaratı
-            </div>
-            <h1 className="text-3xl font-extrabold tracking-tight">
-              <span className="gradient-text">Akıllı para</span>'yı takip et, kopyala, öğren
-            </h1>
-            <p className="mt-1 max-w-xl text-sm muted">
-              Sistem otomatik olarak kaliteli trader'ları bulur, işlemlerini paper modda kopyalar ve
-              kazandıranları öne çıkarır. Aşağıdaki kartlar her şeyi tek bakışta özetler.
-            </p>
-          </div>
-          <div className="text-right">
-            <div className="text-xs muted">Toplam Paper PnL</div>
-            <div className="text-4xl font-extrabold" style={{ color: pnlUp ? "var(--emerald)" : "var(--rose)" }}>
-              {pnlUp ? "+" : ""}{ov ? pnl.toFixed(3) : "—"} <span className="text-lg">SOL</span>
-            </div>
-            <div className="mt-1 text-xs muted">{perf ? `%${Math.round((perf.win_rate || 0) * 100)} başarı · ${perf.closed_trades} kapanmış` : "—"}</div>
-          </div>
-        </div>
-      </div>
+      <MoodHero />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Takip Edilen Cüzdan" value={ov?.wallets?.tracked ?? "—"} tone="var(--brand)" icon={<Wallet size={18} />}

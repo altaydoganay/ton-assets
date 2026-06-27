@@ -10,7 +10,7 @@ export function StatCard({
 }) {
   // tone => kart rengi (üst şerit + zemin + ikon); accent => sayı rengi
   return (
-    <div className="stat" style={tone ? ({ ["--tone" as any]: tone }) : undefined}>
+    <div className="stat shine" style={tone ? ({ ["--tone" as any]: tone }) : undefined}>
       {icon && <div className="stat-ico">{icon}</div>}
       <div className="text-xs muted">{label}</div>
       <div className="mt-0.5 text-2xl font-extrabold tracking-tight"
