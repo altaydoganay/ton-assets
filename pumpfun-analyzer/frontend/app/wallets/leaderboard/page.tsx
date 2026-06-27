@@ -11,6 +11,14 @@ import { CountUp } from "@/components/CountUp";
 import { Trophy, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Crown, Medal, Award } from "lucide-react";
 
 type Row = Record<string, any>;
+
+function timeAgo(iso: string): string {
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return `${Math.round(s)} sn önce`;
+  if (s < 3600) return `${Math.round(s / 60)} dk önce`;
+  return `${Math.round(s / 3600)} sa önce`;
+}
+
 const COLS: { key: string; label: string; fmt?: (v: any, r?: Row) => string; right?: boolean }[] = [
   { key: "score", label: "Puan", fmt: (v) => (v != null ? Math.round(v).toString() : "—") },
   { key: "win_rate", label: "Başarı", fmt: (v) => (v != null ? `%${Math.round(v * 100)}` : "—") },
@@ -31,24 +39,37 @@ export default function Leaderboard() {
   const [draining, setDraining] = useState(false);
   const toast = useToast();
   const drain = backlog?.last_drain;
+  const autoOn = !!backlog?.autodrain;
   const isRunning = !!drain?.running;
+  const [autoBusy, setAutoBusy] = useState(false);
+
+  async function toggleAuto(next: boolean) {
+    setAutoBusy(true);
+    try {
+      await apiSend(`/setup/backlog/autodrain?enabled=${next}`, "POST");
+      await mutBacklog();
+      toast(next ? "success" : "info",
+        next ? "Otomatik analiz açıldı — backlog arka planda erimeye başlayacak (~1-2 dk içinde hareket görünür)."
+             : "Otomatik analiz durduruldu.");
+    } catch (e: any) { toast("error", e?.message || "Değiştirilemedi"); }
+    finally { setAutoBusy(false); }
+  }
   // Çalışırken backlog'u sık güncelle (canlı ilerleme)
   useEffect(() => {
-    if (!isRunning) return;
-    const id = setInterval(() => { mutBacklog(); mutate(); }, 4000);
+    if (!isRunning && !autoOn) return;
+    const id = setInterval(() => { mutBacklog(); mutate(); }, 5000);
     return () => clearInterval(id);
-  }, [isRunning, mutBacklog, mutate]);
-  // running -> bitti geçişinde bildirim göster
+  }, [isRunning, autoOn, mutBacklog, mutate]);
+  // tek-seferlik manuel burst bitince bildirim göster
   const wasRunning = useRef(false);
   useEffect(() => {
-    if (wasRunning.current && drain && !drain.running) {
-      toast(drain.reason ? "info" : "success",
-        `Backlog analizi bitti: ${drain.processed} işlendi · +${drain.tracked} takibe · ${drain.remaining} kaldı`
-        + (drain.reason ? ` (${drain.reason})` : ""));
+    if (wasRunning.current && drain && !drain.running && !autoOn) {
+      toast("success",
+        `Analiz turu bitti: +${drain.processed} işlendi · +${drain.tracked} takibe · ${Number(drain.remaining ?? 0).toLocaleString("tr-TR")} kaldı`);
       mutate();
     }
     wasRunning.current = !!drain?.running;
-  }, [drain, toast, mutate]);
+  }, [drain, autoOn, toast, mutate]);
 
   async function rescan() {
     setScanning(true);
@@ -137,38 +158,35 @@ export default function Leaderboard() {
         </div>
       )}
 
-      {backlog && (backlog.pending > 0 || isRunning) && (
-        <div className="card mb-4" style={{ borderColor: "var(--amber)", borderWidth: 1 }}>
+      {backlog && (backlog.pending > 0 || isRunning || autoOn) && (
+        <div className="card mb-4" style={{ borderColor: autoOn ? "var(--emerald)" : "var(--amber)", borderWidth: 1 }}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="font-semibold">🔍 Keşif Backlog'u: {backlog.pending.toLocaleString("tr-TR")} cüzdan analiz bekliyor</div>
               <p className="text-xs muted mt-1 max-w-xl">
                 Bu cüzdanları yalnızca <b>adres</b> olarak biliyoruz; al-sat geçmişleri henüz zincirden çekilmedi.
-                Analiz etmek <b>Helius kredisi harcar</b> (~10 kredi/cüzdan). Ne kadar analiz edeceğini sen seç —
-                arka planda çalışır, durdurmak için tekrar başlatma.
+                Analiz etmek <b>Helius kredisi harcar</b> (~10 kredi/cüzdan). <b>Otomatik analiz</b>'i açarsan
+                arka planda sürekli (deploy'a dayanıklı) erir; kredi azalınca kapat.
               </p>
-              {isRunning ? (
-                <p className="text-xs mt-1" style={{ color: "var(--amber)" }}>
-                  ⏳ Şu an çalışıyor: {drain.processed}{drain.target ? `/${drain.target}` : ""} işlendi · +{drain.tracked} takibe alındı… (canlı güncelleniyor)
-                </p>
-              ) : drain && (
-                <p className="text-xs muted mt-1">
-                  Son analiz: {drain.processed} işlendi · +{drain.tracked} takibe ·
-                  {" "}{drain.remaining?.toLocaleString?.("tr-TR") ?? drain.remaining} kaldı
-                  {drain.reason ? ` · ⚠️ ${drain.reason}` : ""}
-                </p>
-              )}
+              <p className="text-xs mt-1" style={{ color: autoOn ? "var(--emerald)" : "var(--muted)" }}>
+                {autoOn ? "🟢 Otomatik analiz AÇIK — arka planda sürekli işliyor. " : "⚪ Otomatik analiz kapalı. "}
+                {drain?.ts && <>Son hareket {timeAgo(drain.ts)} · son turda +{drain.processed ?? 0} analiz, +{drain.tracked ?? 0} takibe{drain.remaining != null ? ` · ${Number(drain.remaining).toLocaleString("tr-TR")} kaldı` : ""}.</>}
+                {!drain?.ts && "Henüz analiz turu çalışmadı."}
+              </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {isRunning ? (
-                <span className="badge inline-flex items-center gap-2" style={{ background: "color-mix(in srgb, var(--amber) 18%, transparent)", color: "var(--amber)" }}>
-                  <RefreshCw size={14} className="animate-spin" /> Analiz sürüyor…
-                </span>
-              ) : [500, 2000, 5000].map((n) => (
-                <button key={n} className="btn" disabled={draining} onClick={() => drainBacklog(n)}>
-                  {n.toLocaleString("tr-TR")} analiz (~{(n * 10).toLocaleString("tr-TR")} kredi)
-                </button>
-              ))}
+            <div className="flex flex-col items-end gap-2">
+              <button className={autoOn ? "btn-primary" : "btn"} onClick={() => toggleAuto(!autoOn)} disabled={autoBusy}>
+                <RefreshCw size={14} className={autoOn ? "animate-spin" : ""} />
+                {autoOn ? "Otomatik analizi durdur" : "Otomatik analizi başlat"}
+              </button>
+              <div className="flex flex-wrap justify-end gap-2">
+                {[500, 2000].map((n) => (
+                  <button key={n} className="btn-ghost text-xs" disabled={draining} onClick={() => drainBacklog(n)}
+                    title="Tek seferlik sabit miktar (kredi kontrolü)">
+                    +{n.toLocaleString("tr-TR")} (~{(n * 10 / 1000).toFixed(0)}k kredi)
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>

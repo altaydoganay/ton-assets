@@ -115,13 +115,28 @@ def backlog_status(db: Session = Depends(get_db)):
     sayısı + son toplu analiz özeti. Bu cüzdanların işlem geçmişi henüz ZİNCİRDEN
     çekilmedi; analiz Helius kredisi harcar (~10 kredi/cüzdan)."""
     from ..services.discovery import count_pending
-    from ..services.settings_service import get_setting
+    from ..services.settings_service import get_setting, get_runtime_flag
     pending = count_pending(db)
     return {
         "pending": pending,
         "est_credits": pending * 10,  # kaba tahmin: ~1 Enhanced isteği/cüzdan
         "last_drain": get_setting(db, "_meta_backlog_drain"),
+        "autodrain": get_runtime_flag(db, "backlog_autodrain", False),
     }
+
+
+@setup_router.post("/backlog/autodrain")
+def toggle_autodrain(enabled: bool = Query(...), db: Session = Depends(get_db)):
+    """Otomatik backlog analizi (sürekli, arka planda) aç/kapat. Açıkken her beat
+    tikinde (~2 dk) zaman bütçesi kadar çok cüzdan analiz edilir → backlog hızlı
+    ve GÖRÜNÜR şekilde erir. KREDİ HARCAR; bitince ya da kredi azalınca kapat.
+    Beat tabanlı: deploy/restart'a dayanıklı (kaldığı yerden sürer)."""
+    from ..services.settings_service import set_runtime_flag
+    val = set_runtime_flag(db, "backlog_autodrain", enabled)
+    db.add(AuditLog(level="info", category="discovery",
+                    message=f"Otomatik backlog analizi {'AÇILDI' if enabled else 'KAPATILDI'}"))
+    db.commit()
+    return {"autodrain": bool(val.get("backlog_autodrain"))}
 
 
 @setup_router.post("/backlog/analyze")

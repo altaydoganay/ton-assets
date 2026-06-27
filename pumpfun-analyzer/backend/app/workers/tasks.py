@@ -84,7 +84,11 @@ def analyze_discovered() -> dict:
     Aday toplama canlı dinleyicide (PumpPortal) yapılır; bu görev `discovered`
     durumundaki cüzdanları Helius ile analiz eder ve uygunları `tracked` yapar.
     """
-    from ..services.discovery import analyze_discovered_batch
+    import time as _t
+    from collections import Counter
+    from datetime import datetime, timezone
+    from ..services.discovery import analyze_discovered_batch, count_pending
+    from ..services.settings_service import get_runtime_flag, set_setting
 
     db = SessionLocal()
     try:
@@ -96,45 +100,72 @@ def analyze_discovered() -> dict:
         except Exception as exc:  # noqa: BLE001
             logger.info("Zincir sağlayıcı kurulamadı: %s", exc)
             return {"analyzed": 0, "error": "provider"}
-        try:
-            results = analyze_discovered_batch(
-                db, provider,
-                limit=settings.discovery_batch_size,
-                ingest_limit=settings.discovery_ingest_limit,
-            )
-        except RpcUnavailableError as exc:
-            logger.warning("Keşif analizi atlandı (RPC): %s", exc)
-            return {"analyzed": 0, "error": "rpc_unavailable"}
-        tracked = sum(1 for r in results if r.get("tracked"))
-        # Tanı: en sık eleme nedenlerini ASCII etiketle logla (Windows findstr uyumlu)
-        from collections import Counter
+
+        # OTOMATİK BACKLOG ANALİZİ (panelden aç/kapa): açıkken her beat tikinde
+        # zaman bütçesi (90 sn) kadar parça parça çok cüzdan işler — backlog hızlı
+        # ve GÖRÜNÜR şekilde erir. Kapalıyken normal yavaş damlama (discovery_batch_size).
+        # Beat tabanlı olduğundan deploy/worker restart'ına dayanıklıdır (sonraki
+        # tik kaldığı yerden sürer); kendini-zincirleyen kırılgan göreve gerek yok.
+        autodrain = get_runtime_flag(db, "backlog_autodrain", False)
+        budget = 90.0 if autodrain else 0.0
+        chunk = 25 if autodrain else settings.discovery_batch_size
+        start = _t.monotonic()
+        processed = tracked = 0
         fc: Counter = Counter()
-        for r in results:
-            for f in r.get("failures", []):
-                fc[f] += 1
-        logger.info("[ANALYZE] batch=%d tracked=%d top_fails=%s",
-                    len(results), tracked, dict(fc.most_common(5)))
-        # Panelde (Loglar) görünür: yeni takibe alım olduysa yaz (nadir/önemli olay);
-        # hiç yoksa en sık eleme nedenini ~20 dk'da bir nabız olarak göster.
+
+        def _beat(running: bool):
+            try:
+                set_setting(db, "_meta_backlog_drain", {
+                    "running": running, "processed": processed, "tracked": tracked,
+                    "remaining": count_pending(db), "auto": autodrain,
+                    "ts": datetime.now(timezone.utc).isoformat()})
+            except Exception:  # noqa: BLE001
+                db.rollback()
+
+        while True:
+            try:
+                results = analyze_discovered_batch(
+                    db, provider, limit=chunk, ingest_limit=settings.discovery_ingest_limit)
+            except RpcUnavailableError as exc:
+                logger.warning("Keşif analizi atlandı (RPC): %s", exc)
+                _beat(False)
+                if processed == 0:
+                    return {"analyzed": 0, "error": "rpc_unavailable"}
+                break
+            if not results:
+                break
+            processed += len(results)
+            tracked += sum(1 for r in results if r.get("tracked"))
+            for r in results:
+                for f in r.get("failures", []):
+                    fc[f] += 1
+            _beat(autodrain)  # canlı ilerleme (panel her tikte taze görür)
+            if not autodrain or (_t.monotonic() - start) > budget:
+                break
+        _beat(autodrain and count_pending(db) > 0)
+
+        logger.info("[ANALYZE] processed=%d tracked=%d auto=%s top_fails=%s",
+                    processed, tracked, autodrain, dict(fc.most_common(5)))
+        # Panelde (Loglar) görünür: yeni takibe alım olduysa yaz; yoksa ~20 dk'da bir nabız.
         try:
             from ..models import AuditLog
             show, msg = False, ""
             if tracked > 0:
                 show = True
-                msg = f"Analiz: {len(results)} cüzdan incelendi · {tracked} yeni TAKİBE alındı"
+                msg = f"Analiz: {processed} cüzdan incelendi · {tracked} yeni TAKİBE alındı"
             elif _should_heartbeat(db, "analysis", 20):
                 show = True
                 top = ", ".join(f"{k} ({v})" for k, v in fc.most_common(3)) or "—"
-                msg = (f"Analiz: {len(results)} cüzdan incelendi · 0 takibe alındı · "
+                msg = (f"Analiz: {processed} cüzdan incelendi · 0 takibe alındı · "
                        f"en sık eleme: {top}")
             if show:
                 db.add(AuditLog(level="info", category="analysis", message=msg,
-                                context={"analyzed": len(results), "tracked": tracked,
+                                context={"analyzed": processed, "tracked": tracked,
                                          "top_fails": dict(fc.most_common(5))}))
                 db.commit()
         except Exception:  # noqa: BLE001
             db.rollback()
-        return {"analyzed": len(results), "tracked": tracked, "results": results}
+        return {"analyzed": processed, "tracked": tracked, "remaining": count_pending(db)}
     finally:
         db.close()
 
