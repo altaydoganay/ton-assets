@@ -37,6 +37,25 @@ Tailscale'i indirir/kurar, ağa bağlar ve erişeceğin adresi yazar.
 ```bash
 bash scripts/setup-tailscale.sh
 ```
+
+### "Bağlandım ama adresi açmıyor" (Windows + Docker Desktop)
+En sık sebep: **Windows Güvenlik Duvarı** 3000/8000 portuna Tailscale arayüzünden
+gelen isteği bloke ediyor. Sırayla:
+
+1. **PC'nin kendi tarayıcısında** `http://localhost:3000` açılıyor mu? (Container'lar ayakta mı?)
+2. **PC'nin kendi tarayıcısında** `http://<bu-PC'nin-tailscale-ip>:3000` açılıyor mu?
+   - IP: `& "C:\Program Files\Tailscale\tailscale.exe" ip -4`
+   - **Açılmıyorsa** sorun güvenlik duvarı/port (telefon değil). Yönetici PowerShell'de:
+     ```powershell
+     New-NetFirewallRule -DisplayName "Altay Bot Panel" -Direction Inbound -LocalPort 3000 -Protocol TCP -Action Allow
+     New-NetFirewallRule -DisplayName "Altay Bot API"   -Direction Inbound -LocalPort 8000 -Protocol TCP -Action Allow
+     ```
+   - **Açılıyorsa** sorun telefon/tailnet tarafında (aşağı bak).
+3. Telefon tarafı: Tailscale uygulaması **bağlı** (toggle ON) mu? Kullandığın IP
+   **PC'nin** `100.x` IP'si mi (telefonunki değil)? İki cihaz da
+   [login.tailscale.com](https://login.tailscale.com) → Machines'te **online** mı?
+4. PC'de Tailscale gerçekten kurulu/bağlı mı? (Sadece telefona kurmak yetmez —
+   PC de aynı hesaba bağlı olmalı ki bir `100.x` IP'si olsun.)
 Script Tailscale'i kurar, ağa bağlar ve erişeceğin adresi (`http://<tailscale-ip>:3000`)
 yazar. İlk kezse tarayıcıda açılan linkle (Google/GitHub hesabı yeter) giriş yaparsın.
 

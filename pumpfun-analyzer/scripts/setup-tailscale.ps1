@@ -37,7 +37,22 @@ if (-not (Test-Path $ts)) {
 Say "Tailscale agina baglaniliyor... (ilk kezse acilan tarayici ile giris yap)"
 & $ts up
 
-# 3) Erisim adresini yazdir.
+# 3) Guvenlik duvari: 3000/8000 portlarina gelen baglantilara izin ver. Bu, Windows
+#    + Docker Desktop'ta telefonun "adresi acmiyor" sorununun ana sebebidir.
+Say "Guvenlik duvari kurallari ekleniyor (port $FrontendPort / $BackendPort)..."
+try {
+  Get-NetFirewallRule -DisplayName "Altay Bot*" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+  New-NetFirewallRule -DisplayName "Altay Bot Panel $FrontendPort" -Direction Inbound -LocalPort $FrontendPort -Protocol TCP -Action Allow -Profile Any -ErrorAction Stop | Out-Null
+  New-NetFirewallRule -DisplayName "Altay Bot API $BackendPort"   -Direction Inbound -LocalPort $BackendPort  -Protocol TCP -Action Allow -Profile Any -ErrorAction Stop | Out-Null
+  Write-Host "Guvenlik duvari kurallari eklendi." -ForegroundColor Green
+} catch {
+  Write-Host "Guvenlik duvari kurali EKLENEMEDI - bu script'i YONETICI olarak calistir," -ForegroundColor Yellow
+  Write-Host "veya elle ekle (Yonetici PowerShell):" -ForegroundColor Yellow
+  Write-Host "  New-NetFirewallRule -DisplayName 'Altay Bot Panel' -Direction Inbound -LocalPort $FrontendPort -Protocol TCP -Action Allow" -ForegroundColor Yellow
+  Write-Host "  New-NetFirewallRule -DisplayName 'Altay Bot API'   -Direction Inbound -LocalPort $BackendPort  -Protocol TCP -Action Allow" -ForegroundColor Yellow
+}
+
+# 4) Erisim adresini yazdir.
 $ip = (& $ts ip -4 | Select-Object -First 1)
 if (-not $ip) {
   Write-Host "Tailscale IP alinamadi. Tailscale uygulamasindan baglantiyi kontrol et." -ForegroundColor Yellow
