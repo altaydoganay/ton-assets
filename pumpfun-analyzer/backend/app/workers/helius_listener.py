@@ -75,6 +75,22 @@ def _discovery_on() -> bool:
         db.close()
 
 
+def _listener_on() -> bool:
+    """Canlı WS dinleyicisi (TÜM abonelikler) açık mı — panelden kontrol edilir.
+    Kapalıyken hem keşif firehose'u hem de cüzdan-başına abonelikler İPTAL edilir;
+    WS boş kalır (≈0 streaming kredisi). Kopya işlem POLL ile devam eder
+    (poll_tracked_wallets her ~60 sn). Gerçek-zaman görünürlüğü yerine kredi
+    tasarrufu isteyen kullanıcı için ana kapatma anahtarı."""
+    db = SessionLocal()
+    try:
+        from ..services.settings_service import get_runtime_flag
+        return get_runtime_flag(db, "listener_enabled", settings.live_listener_enabled)
+    except Exception:  # noqa: BLE001
+        return settings.live_listener_enabled
+    finally:
+        db.close()
+
+
 class _RateLimiter:
     """Dakikalık kayan pencere sayacı."""
     def __init__(self, per_min: int):
@@ -129,13 +145,38 @@ class HeliusListener:
         finally:
             db.close()
 
+    async def _unsubscribe_all(self, ws):
+        """Tüm abonelikleri (keşif + cüzdan) iptal et — WS boş kalır, ≈0 kredi."""
+        for sid in list(self.sub_meta.keys()):
+            try:
+                await ws.send(json.dumps({"jsonrpc": "2.0", "id": self._next_id(),
+                                          "method": "logsUnsubscribe", "params": [sid]}))
+            except Exception:  # noqa: BLE001
+                pass
+        self.sub_meta.clear()
+        self.subscribed_accounts.clear()
+        self.discovery_sub_active = False
+
     async def _refresh(self, ws):
+        listener_was_on = True
         while True:
             try:
                 await asyncio.to_thread(self._heartbeat)
                 # ASCII etiketli durum logu (Windows findstr ile aranabilir)
                 logger.info("[DISCOVERY] lookups=%d candidates=%d tracked_subs=%d",
                             self.stat_lookups, self.stat_candidates, len(self.subscribed_accounts))
+                # ANA KAPATMA: dinleyici kapalıysa TÜM abonelikleri durdur (kredi
+                # tasarrufu) ve abone OLMA — kopya işlem POLL ile sürer.
+                listener_on = await asyncio.to_thread(_listener_on)
+                if not listener_on:
+                    if listener_was_on:
+                        await self._unsubscribe_all(ws)
+                        logger.info("[LISTENER] Canlı dinleyici KAPALI — tüm abonelikler durduruldu "
+                                    "(kredi koruması; kopya işlem POLL ile sürer)")
+                    listener_was_on = False
+                    await asyncio.sleep(REFRESH_SECONDS)
+                    continue
+                listener_was_on = True
                 want_discovery = await asyncio.to_thread(_discovery_on)
                 if want_discovery and not self.discovery_sub_active:
                     await self._subscribe_logs(ws, PUMP_FUN_PROGRAM, "discovery", None)

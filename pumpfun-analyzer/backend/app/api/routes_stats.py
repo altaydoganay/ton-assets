@@ -95,6 +95,20 @@ def toggle_discovery(enabled: bool = Query(...), db: Session = Depends(get_db)):
     return {"discovery_enabled": bool(val.get("discovery_enabled"))}
 
 
+@setup_router.post("/listener")
+def toggle_listener(enabled: bool = Query(...), db: Session = Depends(get_db)):
+    """Canlı WS dinleyicisini TÜMÜYLE aç/kapat (ana kredi anahtarı). Kapalıyken
+    keşif firehose'u VE cüzdan-başına abonelikler durur → Helius streaming kredisi
+    ≈0. Kopya işlem POLL ile sürer (her ~60 sn takip cüzdanları taranır). Dinleyici
+    ~30 sn içinde uygular. "Canlı Olay Akışı" gerçek-zaman görünürlüğü için; kopya
+    işlem için GEREKLİ DEĞİLDİR."""
+    val = set_runtime_flag(db, "listener_enabled", enabled)
+    db.add(AuditLog(level="info", category="settings",
+                    message=f"Canlı dinleyici {'AÇILDI' if enabled else 'KAPATILDI (kredi koruması; kopya işlem POLL ile sürer)'}"))
+    db.commit()
+    return {"listener_enabled": bool(val.get("listener_enabled"))}
+
+
 @setup_router.get("/backlog")
 def backlog_status(db: Session = Depends(get_db)):
     """Keşif backlog'u: analiz bekleyen (yalnızca ADRES olarak elimizdeki) cüzdan

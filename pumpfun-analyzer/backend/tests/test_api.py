@@ -18,6 +18,18 @@ def test_health(db):
     assert body["trading_mode"] in ("paper", "alerts_only", "live")
 
 
+def test_listener_toggle_roundtrips(db):
+    seed_defaults(db)
+    # kapat → /setup'ta yansımalı
+    r = client.post("/api/setup/listener", params={"enabled": False})
+    assert r.status_code == 200 and r.json()["listener_enabled"] is False
+    assert client.get("/api/setup").json()["listener_enabled"] is False
+    # tekrar aç
+    r = client.post("/api/setup/listener", params={"enabled": True})
+    assert r.status_code == 200 and r.json()["listener_enabled"] is True
+    assert client.get("/api/setup").json()["listener_enabled"] is True
+
+
 def test_settings_roundtrip(db):
     seed_defaults(db)
     r = client.get("/api/settings/thresholds")

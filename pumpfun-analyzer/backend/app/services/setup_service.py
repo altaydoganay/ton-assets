@@ -79,4 +79,5 @@ def setup_status(db: Session) -> dict:
         "build_label": settings.app_build_label,
         "discovery_enabled": get_runtime_flag(db, "discovery_enabled", settings.discovery_enabled),
         "discovery_max_lookups_per_min": settings.discovery_max_lookups_per_min,
+        "listener_enabled": get_runtime_flag(db, "listener_enabled", settings.live_listener_enabled),
     }
