@@ -136,7 +136,7 @@ def analyze_backlog(count: int = Query(2000, ge=1, le=20000), db: Session = Depe
         return {"started": False, "pending": 0, "message": "Backlog boş — analiz bekleyen cüzdan yok."}
     target = min(count, pending)
     try:
-        drain_backlog.delay(count=target)
+        drain_backlog.delay(target=target)
         started = True
     except Exception as exc:  # noqa: BLE001 — worker/Redis yoksa açıklayıcı dön
         raise HTTPException(503, f"Arka plan işçisine ulaşılamadı (worker/Redis): {exc}")

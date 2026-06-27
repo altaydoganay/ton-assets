@@ -114,7 +114,7 @@ export default function Leaderboard() {
               </p>
               {isRunning ? (
                 <p className="text-xs mt-1" style={{ color: "var(--amber)" }}>
-                  ⏳ Şu an çalışıyor: {drain.processed} işlendi · +{drain.tracked} takibe alındı… (canlı güncelleniyor)
+                  ⏳ Şu an çalışıyor: {drain.processed}{drain.target ? `/${drain.target}` : ""} işlendi · +{drain.tracked} takibe alındı… (canlı güncelleniyor)
                 </p>
               ) : drain && (
                 <p className="text-xs muted mt-1">
