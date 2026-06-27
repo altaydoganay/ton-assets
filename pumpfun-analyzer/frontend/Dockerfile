@@ -11,8 +11,11 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# Tarayıcının ulaşacağı API adresi derleme anında gömülür.
-ARG NEXT_PUBLIC_API_URL=http://localhost:8000/api
+# Varsayılan BOŞ: panel API'yi aynı kökenden (/api) ister ve Next.js sunucusu
+# backend'e proxy'ler (next.config.js). Yalnızca özel domain/reverse-proxy için
+# build sırasında NEXT_PUBLIC_API_URL geçilir. Eskiden buraya gömülen localhost,
+# telefon/uzak erişimde "veri gelmiyor" sorununa yol açıyordu.
+ARG NEXT_PUBLIC_API_URL=
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
