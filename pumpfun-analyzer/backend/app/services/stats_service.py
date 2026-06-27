@@ -165,11 +165,18 @@ def open_positions(db: Session, market=None) -> list[dict]:
         if p["qty"] <= 1e-9:
             continue
         price = 0.0
+        liq_sol = 0.0
         if market is not None:
             try:
                 md = market.get_token_market(mint)
                 if md and getattr(md, "ok", False) and getattr(md, "price_sol", None):
                     price = float(md.price_sol)
+                    # likiditeyi SOL'a çevir (gerçekçi çıkış tavanı için)
+                    pu, lu = getattr(md, "price_usd", None), getattr(md, "liquidity_usd", None)
+                    if price > 0 and pu and lu:
+                        sol_usd = float(pu) / price
+                        if sol_usd > 0:
+                            liq_sol = float(lu) / sol_usd
             except Exception:  # noqa: BLE001 — canlı fiyat alınamazsa cache'e düş
                 price = 0.0
         if not price:
@@ -178,6 +185,13 @@ def open_positions(db: Session, market=None) -> list[dict]:
         qty, cost = p["qty"], p["cost"]
         avg_cost = (cost / qty) if qty else 0.0
         value = (qty * price) if price else None
+        # GERÇEKÇİLİK TAVANI: bir pozisyonun değeri havuzdan çıkarılabilecek SOL'dan
+        # (likidite) fazla olamaz. Bozuk giriş (parse glitch) imkânsız PnL üretirse
+        # burada sınırlanır ve "suspicious" işaretlenir.
+        suspicious = False
+        if value is not None and liq_sol > 0 and value > liq_sol:
+            value = liq_sol
+            suspicious = True
         unreal = (value - cost) if value is not None else None
         unreal_pct = (unreal / cost) if (unreal is not None and cost > 0) else None
         out.append({
@@ -190,6 +204,7 @@ def open_positions(db: Session, market=None) -> list[dict]:
             "current_value_sol": round(value, 4) if value is not None else None,
             "unrealized_pnl_sol": round(unreal, 4) if unreal is not None else None,
             "unrealized_pnl_pct": round(unreal_pct, 4) if unreal_pct is not None else None,
+            "suspicious": suspicious,
         })
     # En çok zararda olanlar üstte (dikkat gereken pozisyonlar önce)
     out.sort(key=lambda r: (r["unrealized_pnl_sol"] if r["unrealized_pnl_sol"] is not None else 0.0))

@@ -188,6 +188,22 @@ def handle_trade_event(
     market_price_sol = swap.price_sol
     liquidity_sol = assessment.liquidity_sol
 
+    # GİRİŞ FİYATI DOĞRULAMA (kritik): liderin zincir-üstü swap'ından çıkarılan fiyat
+    # bazı durumlarda hatalı (çok düşük) olabilir → paper motoru "0.01 SOL ile
+    # milyarlarca token aldık" sanır (token arzından fazla), güncel fiyatla değer
+    # patlar (imkânsız PnL). Token'in CANLI piyasa fiyatı varsa ve lider fiyatı ondan
+    # AŞIRI sapıyorsa (parse glitch), piyasa fiyatını kullanırız → gerçekçi miktar +
+    # giriş/değerleme tutarlı. Taze token'de piyasa fiyatı yoksa lider fiyatına güveniriz.
+    mkt_price = float((token.metrics or {}).get("price_sol") or 0.0)
+    if mkt_price > 0 and market_price_sol > 0:
+        ratio = market_price_sol / mkt_price
+        if ratio > 5 or ratio < 0.2:
+            logger.warning("Giriş fiyatı düzeltildi %s: swap=%.3g → piyasa=%.3g (oran %.1f)",
+                           trade.mint, market_price_sol, mkt_price, ratio)
+            market_price_sol = mkt_price
+    elif mkt_price > 0 and market_price_sol <= 0:
+        market_price_sol = mkt_price
+
     # AKILLI PARA MUTABAKATI (confluence): bu token'i son pencerede kaç FARKLI takip
     # cüzdanı aldı? 2+ bağımsız kaliteli cüzdan = çok daha güçlü sinyal. İsteğe bağlı
     # kapı: min_confluence > 1 ise yeterli mutabakat yoksa alım yapılmaz.

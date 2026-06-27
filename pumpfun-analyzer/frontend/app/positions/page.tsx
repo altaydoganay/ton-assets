@@ -74,7 +74,11 @@ export default function Positions() {
                 const col = p.unrealized_pnl_sol == null ? "var(--muted)" : up ? "var(--emerald)" : "var(--rose)";
                 return (
                   <tr key={p.token_mint} className="table-row border-b last:border-0" style={{ borderColor: "var(--border)" }}>
-                    <td className="p-2"><Link href={`/tokens/${p.token_mint}`} className="clickable font-mono text-xs">{shortAddr(p.token_mint)}</Link></td>
+                    <td className="p-2">
+                      <Link href={`/tokens/${p.token_mint}`} className="clickable font-mono text-xs">{shortAddr(p.token_mint)}</Link>
+                      {p.suspicious && <span className="ml-1 badge" title="Değer havuz likiditesini aştığı için sınırlandı (düşük likidite/şüpheli giriş)"
+                        style={{ background: "color-mix(in srgb, var(--amber) 18%, transparent)", color: "var(--amber)" }}>⚠ likidite</span>}
+                    </td>
                     <td className="p-2"><Link href={`/wallets/${p.wallet_address}`} className="clickable font-mono text-xs">{shortAddr(p.wallet_address)}</Link></td>
                     <td className="p-2 text-right">{fmtNum(p.cost_sol, 4)}</td>
                     <td className="p-2 text-right">{p.current_value_sol == null ? "—" : fmtNum(p.current_value_sol, 4)}</td>
