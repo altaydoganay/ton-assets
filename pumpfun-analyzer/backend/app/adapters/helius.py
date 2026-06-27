@@ -6,9 +6,26 @@ ek olarak enhanced transactions endpoint'ini kullanabilir.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .rpc import SolanaRpcAdapter, Transport
+
+
+def with_api_key(url: str, key: str) -> str:
+    """URL'deki `api-key` parametresini GÜNCEL anahtarla hizalar.
+
+    KRİTİK GÜVENCE: .env'de HELIUS_RPC_URL / HELIUS_WS_URL içine ESKİ anahtar
+    gömülü kalmışsa (yalnızca HELIUS_API_KEY değiştirildiğinde sık olur), standart
+    RPC (poll = kopya tetikleyici) ve WS dinleyici eski/ölü anahtarı kullanmaya
+    devam eder → analiz (Enhanced, yeni anahtar) çalışır ama KOPYA İŞLEM DURUR.
+    Bu fonksiyon URL'deki anahtarı her zaman güncel anahtara çeker."""
+    if not url or not key:
+        return url
+    if "api-key=" in url:
+        return re.sub(r"api-key=[^&]*", f"api-key={key}", url)
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}api-key={key}"
 
 
 class HeliusAdapter(SolanaRpcAdapter):
@@ -17,7 +34,8 @@ class HeliusAdapter(SolanaRpcAdapter):
     def __init__(self, api_key: str, rpc_url: str | None = None, transport: Transport | None = None,
                  min_interval: float = 0.0, rate_limit_retries: int = 6):
         self.api_key = api_key
-        url = rpc_url or f"https://mainnet.helius-rpc.com/?api-key={api_key}"
+        # rpc_url verilmişse içindeki (muhtemelen eski) anahtarı güncel anahtara hizala.
+        url = with_api_key(rpc_url, api_key) if rpc_url else f"https://mainnet.helius-rpc.com/?api-key={api_key}"
         super().__init__(endpoints=[url], transport=transport,
                          min_interval=min_interval, rate_limit_retries=rate_limit_retries)
         self._enhanced_base = "https://api.helius.xyz/v0"

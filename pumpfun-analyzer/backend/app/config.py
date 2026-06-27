@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     app_name: str = "Pump.fun Cüzdan Analizcisi"
     # SÜRÜM/BUILD numarası — her anlamlı güncellemede artar. Panelin üst barında
     # ve /health'te gösterilir; deploy'un doğru kodu aldığını buradan doğrularsın.
-    app_build: str = "31"
-    app_build_label: str = "tasarım dalgası 2: count-up + podyum + konfeti/titreşim + başlık şeritleri + ses + tema"
+    app_build: str = "32"
+    app_build_label: str = "Helius anahtar hizalama — eski anahtar RPC/WS'de kalıp kopyayı durdurmasın"
     environment: Literal["development", "production", "test"] = "development"
     api_prefix: str = "/api"
     secret_key: str = Field(default="degistir-bu-anahtari", description="Uygulama imza anahtarı")

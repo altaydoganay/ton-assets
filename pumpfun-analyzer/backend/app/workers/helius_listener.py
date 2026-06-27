@@ -45,7 +45,9 @@ REFRESH_SECONDS = 30
 
 def _ws_url() -> str:
     if settings.helius_ws_url:
-        return settings.helius_ws_url
+        # .env'de eski anahtar gömülü kalmışsa güncel HELIUS_API_KEY'e hizala
+        from ..adapters.helius import with_api_key
+        return with_api_key(settings.helius_ws_url, settings.helius_api_key) if settings.helius_api_key else settings.helius_ws_url
     if settings.helius_api_key:
         return f"wss://mainnet.helius-rpc.com/?api-key={settings.helius_api_key}"
     return settings.solana_ws_url

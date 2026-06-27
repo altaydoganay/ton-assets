@@ -30,7 +30,10 @@ def build_chain_provider(throttle: bool = True) -> ChainProvider:
     # Varsayılan: standart RPC (gerekirse Helius RPC'yi de failover olarak ekle)
     endpoints = [settings.solana_rpc_url]
     if settings.helius_rpc_url:
-        endpoints.append(settings.helius_rpc_url)
+        # Anahtar yokken bile URL'de gömülü anahtar güncel HELIUS_API_KEY'e hizalanır
+        from .helius import with_api_key
+        endpoints.append(with_api_key(settings.helius_rpc_url, settings.helius_api_key)
+                         if settings.helius_api_key else settings.helius_rpc_url)
     return SolanaRpcAdapter(endpoints=endpoints, min_interval=mi, rate_limit_retries=rr)
 
 
