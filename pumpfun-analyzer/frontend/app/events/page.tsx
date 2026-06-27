@@ -6,43 +6,83 @@ import { Fetch } from "@/components/Fetch";
 import { Callout } from "@/components/ui";
 import { fetcher, apiSend, shortAddr, fmtNum } from "@/lib/api";
 import { useToast } from "@/components/Toast";
-import { Radio, RadioTower } from "lucide-react";
+import { Turtle, Zap, Globe, Check } from "lucide-react";
+
+// Veri akışı modları — iki bayrağın (listener + firehose/discovery) kombinasyonu.
+type Mode = "poll" | "realtime" | "discover";
+function currentMode(setup: any): Mode {
+  if (!setup) return "realtime";
+  if (setup.listener_enabled === false) return "poll";
+  return setup.discovery_enabled ? "discover" : "realtime";
+}
+
+const MODES: { id: Mode; icon: any; title: string; cost: string; desc: string; rec?: boolean }[] = [
+  { id: "poll", icon: Turtle, title: "Sadece POLL", cost: "En ucuz",
+    desc: "Canlı dinleyici kapalı. Takip cüzdanları ~60 sn'de bir taranır. Gecikme yüksek (taze token'de tepeyi kaçırabilirsin) ama Helius streaming kredisi ≈0." },
+  { id: "realtime", icon: Zap, title: "Gerçek-zaman kopya", cost: "Hızlı + ucuz", rec: true,
+    desc: "Dinleyici açık, firehose KAPALI. Sadece TAKİP cüzdanlarına abone olunur → işlem yapar yapmaz (~saniyeler) yakalanır. Olay-bazlı: yalnızca gerçek işlemde kredi harcar (firehose maliyeti YOK). 60 sn POLL yedek olarak kalır." },
+  { id: "discover", icon: Globe, title: "Gerçek-zaman + keşif", cost: "En pahalı",
+    desc: "Dinleyici + firehose açık. Tüm pump.fun akışından YENİ cüzdan keşfedilir. Streaming kredisini en çok bu yakar — yalnızca yeni cüzdan havuzu ararken aç." },
+];
 
 export default function Events() {
   const { data: setup, mutate } = useSWR<any>("/setup", fetcher, { refreshInterval: 10000 });
   const toast = useToast();
-  const on = setup?.listener_enabled !== false;
+  const mode = currentMode(setup);
+  const live = setup?.listener_enabled !== false;
 
-  async function toggle(next: boolean) {
+  async function setMode(m: Mode) {
     try {
-      await apiSend(`/setup/listener?enabled=${next}`, "POST");
+      // listener: poll modunda kapalı, diğerlerinde açık. firehose: yalnızca discover'da açık.
+      await apiSend(`/setup/listener?enabled=${m !== "poll"}`, "POST");
+      await apiSend(`/setup/discovery?enabled=${m === "discover"}`, "POST");
       await mutate();
-      toast(next ? "info" : "success",
-        next ? "Canlı dinleyici açıldı (kredi harcar)"
-             : "Canlı dinleyici kapatıldı — kopya işlem POLL ile sürer, Helius streaming kredisi ≈0");
-    } catch (e: any) { toast("error", e?.message || "Değiştirilemedi"); }
+      const label = MODES.find((x) => x.id === m)?.title;
+      toast("success", `Mod: ${label}. ~30 sn içinde uygulanır.`);
+    } catch (e: any) { toast("error", e?.message || "Mod değiştirilemedi"); }
   }
 
   return (
     <div>
-      <PageHeader title="Canlı Olay Akışı" subtitle="Zincir üstü tespit edilen gerçek swap işlemleri (transferler ayıklanır)"
-        action={
-          <button className={on ? "btn-danger" : "btn-primary"} onClick={() => toggle(!on)} disabled={!setup}>
-            {on ? <><RadioTower size={15} /> Dinleyiciyi Kapat (kredi tasarrufu)</> : <><Radio size={15} /> Dinleyiciyi Aç</>}
-          </button>
-        } />
+      <PageHeader title="Canlı Olay Akışı"
+        subtitle="Veri akışı modunu seç — kopya işlem hızı vs. Helius kredisi dengesi." />
+
+      <div className="mb-4 grid gap-3 md:grid-cols-3">
+        {MODES.map((m) => {
+          const active = mode === m.id;
+          const Icon = m.icon;
+          return (
+            <button key={m.id} onClick={() => setMode(m.id)}
+              className="card text-left transition"
+              style={{ borderColor: active ? "var(--brand)" : "var(--border)", borderWidth: active ? 2 : 1,
+                       boxShadow: active ? "0 0 0 3px color-mix(in srgb, var(--brand) 18%, transparent)" : undefined }}>
+              <div className="flex items-center justify-between">
+                <Icon size={18} className="brand" />
+                <span className="badge" style={{ background: m.rec ? "color-mix(in srgb, var(--emerald) 16%, transparent)" : "var(--bg2)",
+                                                  color: m.rec ? "var(--emerald)" : "var(--muted)" }}>
+                  {m.rec ? "Önerilen" : m.cost}
+                </span>
+              </div>
+              <div className="mt-2 flex items-center gap-1.5 font-semibold">
+                {m.title}{active && <Check size={15} className="text-emerald-500" />}
+              </div>
+              <p className="mt-1 text-xs muted">{m.desc}</p>
+            </button>
+          );
+        })}
+      </div>
 
       <div className="mb-4">
-        <Callout kind={on ? "warn" : "info"}>
-          {on
-            ? "📡 Canlı dinleyici AÇIK: pump.fun olayları gerçek-zamanlı akıyor (Helius streaming kredisi harcar). Kopya işlem için GEREKLİ DEĞİL — 60 sn'lik POLL zaten takip cüzdanlarının alım/satımını yakalıyor. Krediyi korumak için kapatabilirsin."
-            : "🟢 Canlı dinleyici KAPALI: Helius streaming kredisi ≈0. Kopya işlem POLL ile sürüyor (takip cüzdanları her ~60 sn taranıyor). Bu sayfaya yeni canlı olay düşmez; takip işlemleri Performans/İşlemler'de görünür."}
+        <Callout kind={mode === "discover" ? "warn" : "info"}>
+          {mode === "poll" && "🐢 POLL modu: en düşük kredi, ama ~60 sn gecikme. Hız önemliyse 'Gerçek-zaman kopya'ya geç."}
+          {mode === "realtime" && "⚡ Gerçek-zaman kopya: takip cüzdanları işlem yapar yapmaz kopyalanır; firehose kapalı olduğu için kredi yalnızca gerçek işlemlerde harcanır. Kredi kısıtındayken en mantıklı mod."}
+          {mode === "discover" && "🌐 Keşif açık: en yüksek kredi tüketimi (tüm pump.fun akışı). Yeni cüzdan ararken aç, bulunca geri 'Gerçek-zaman kopya'ya al."}
         </Callout>
       </div>
 
       <Fetch<any[]> path="/events?limit=100" isEmpty={(d) => d.length === 0}
-        emptyLabel={on ? "Henüz olay yok" : "Dinleyici kapalı — yeni canlı olay gelmiyor (kopya işlem POLL ile sürüyor)"}
-        refreshInterval={on ? 8000 : 0}>
+        emptyLabel={live ? "Henüz olay yok" : "Dinleyici kapalı — yeni canlı olay gelmiyor (kopya işlem POLL ile sürüyor)"}
+        refreshInterval={live ? 8000 : 0}>
         {(rows) => (
           <div className="card overflow-x-auto">
             <table className="w-full text-sm">
