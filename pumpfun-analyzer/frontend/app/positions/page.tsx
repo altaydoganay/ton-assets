@@ -1,81 +1,109 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import useSWR from "swr";
 import { fetcher, apiSend, shortAddr, fmtNum } from "@/lib/api";
 import { PageHeader } from "@/components/Confidence";
-import { StatCard, Section } from "@/components/ui";
+import { StatCard } from "@/components/ui";
+import { CountUp } from "@/components/CountUp";
+import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/components/Toast";
 import { useConfirm } from "@/components/ConfirmDialog";
-import { Empty } from "@/components/States";
+import { Wallet, TrendingUp, Flame, Snowflake, Coins } from "lucide-react";
 
 export default function Positions() {
   const toast = useToast();
   const { confirm, dialog } = useConfirm();
-  const { data: positions, mutate } = useSWR<any[]>("/stats/positions", fetcher, { refreshInterval: 12000 });
-  const { data: sum } = useSWR<any>("/stats/trading-summary", fetcher, { refreshInterval: 12000 });
-  const [price, setPrice] = useState<Record<string, string>>({});
+  const { data: positions, mutate } = useSWR<any[]>("/stats/positions", fetcher, { refreshInterval: 8000 });
+  const { data: sum } = useSWR<any>("/stats/trading-summary", fetcher, { refreshInterval: 8000 });
+  const [busy, setBusy] = useState<string>("");
 
-  async function close(mint: string) {
-    const p = parseFloat(price[mint] || "0");
-    if (!p) { toast("error", "Geçerli bir satış fiyatı (SOL) gir"); return; }
-    const ok = await confirm({ title: "Pozisyonu kapat", body: `${shortAddr(mint)} pozisyonu ${p} SOL fiyattan (paper) kapatılacak.`, confirmText: "Kapat" });
+  const totalUnreal = (positions || []).reduce((a, p) => a + (p.unrealized_pnl_sol ?? 0), 0);
+  const haveLive = (positions || []).some((p) => p.unrealized_pnl_sol != null);
+
+  async function sell(p: any, fraction: number) {
+    const pct = Math.round(fraction * 100);
+    const pnlNow = p.unrealized_pnl_sol != null
+      ? ` Şu anki PnL: ${p.unrealized_pnl_sol >= 0 ? "+" : ""}${fmtNum(p.unrealized_pnl_sol, 4)} SOL (%${Math.round((p.unrealized_pnl_pct ?? 0) * 100)}).`
+      : "";
+    const ok = await confirm({
+      title: `Pozisyonun %${pct}'ini sat`,
+      body: `${shortAddr(p.token_mint)} pozisyonunun %${pct}'i CANLI piyasa fiyatından (paper) satılacak.${pnlNow}`,
+      confirmText: `Evet, %${pct} sat`, danger: fraction === 1,
+    });
     if (!ok) return;
-    try { await apiSend(`/stats/positions/${mint}/close?price_sol=${p}`, "POST"); toast("success", "Pozisyon kapatıldı"); await mutate(); }
-    catch (e: any) { toast("error", e?.message || "Kapatılamadı"); }
+    setBusy(p.token_mint + fraction);
+    try {
+      const r: any = await apiSend(`/stats/positions/${p.token_mint}/sell?fraction=${fraction}`, "POST");
+      await mutate();
+      toast(r.realized_pnl_sol >= 0 ? "success" : "info",
+        `%${pct} satıldı · PnL ${r.realized_pnl_sol >= 0 ? "+" : ""}${fmtNum(r.realized_pnl_sol, 4)} SOL`);
+    } catch (e: any) { toast("error", e?.message || "Satılamadı"); }
+    finally { setBusy(""); }
   }
 
   return (
     <div>
       {dialog}
-      <PageHeader title="Açık Pozisyonlar" subtitle="Paper işlemlerden türetilen açık pozisyonlar ve risk göstergeleri" />
+      <PageHeader title="Açık Pozisyonlar" icon={<Wallet size={22} />}
+        subtitle="Canlı gerçekleşmemiş kâr/zarar — şu an ne kadar artıda/eksideyiz. %50/%100 ile anında (canlı fiyattan) sat." />
 
-      {sum && (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <div className="card">
-            <div className="text-xs muted">Günlük Harcama</div>
-            <div className="mt-1 text-xl font-bold">{sum.today_spent_sol} SOL</div>
-          </div>
-          <div className="card">
-            <div className="text-xs muted">Günlük PnL</div>
-            <div className="mt-1 text-xl font-bold" style={{ color: sum.today_realized_pnl_sol >= 0 ? "#10b981" : "#ef4444" }}>{sum.today_realized_pnl_sol} SOL</div>
-          </div>
-          <StatCard label="Açık Pozisyon" value={sum.open_positions} />
-          <StatCard label="Açık Risk" value={`${sum.open_exposure_sol} SOL`} />
-        </div>
-      )}
-
-      <div className="mt-4">
-        <Section title="Pozisyonlar">
-          {positions && positions.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead><tr className="border-b text-left">
-                  <th className="p-2">Token</th><th className="p-2">Miktar</th><th className="p-2">Maliyet (SOL)</th>
-                  <th className="p-2">Gerçekleşmemiş PnL</th><th className="p-2">Manuel Kapat (paper)</th>
-                </tr></thead>
-                <tbody>
-                  {positions.map((p) => (
-                    <tr key={p.token_mint} className="table-row border-b last:border-0">
-                      <td className="p-2">{shortAddr(p.token_mint)}</td>
-                      <td className="p-2">{fmtNum(p.qty, 2)}</td>
-                      <td className="p-2">{fmtNum(p.cost_sol, 4)}</td>
-                      <td className="p-2" style={{ color: p.unrealized_pnl_sol > 0 ? "#10b981" : p.unrealized_pnl_sol < 0 ? "#ef4444" : undefined }}>
-                        {p.unrealized_pnl_sol === null ? "—" : fmtNum(p.unrealized_pnl_sol, 4)}
-                      </td>
-                      <td className="p-2">
-                        <div className="flex items-center gap-2">
-                          <input className="input !w-28" placeholder="fiyat SOL" value={price[p.token_mint] || ""} onChange={(e) => setPrice({ ...price, [p.token_mint]: e.target.value })} />
-                          <button className="btn" onClick={() => close(p.token_mint)}>Sat</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : <Empty label="Açık pozisyon yok" />}
-        </Section>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard label="Gerçekleşmemiş PnL" tone={totalUnreal >= 0 ? "var(--emerald)" : "var(--rose)"}
+          accent={totalUnreal >= 0 ? "var(--emerald)" : "var(--rose)"}
+          icon={totalUnreal >= 0 ? <Flame size={18} /> : <Snowflake size={18} />}
+          value={haveLive ? <CountUp value={totalUnreal} decimals={4} signed suffix=" ◎" /> : "—"}
+          hint={haveLive ? "açık pozisyonların canlı toplamı" : "canlı fiyat bekleniyor"} />
+        <StatCard label="Açık Pozisyon" value={sum?.open_positions ?? positions?.length ?? "—"} tone="var(--sky)" icon={<Coins size={18} />} />
+        <StatCard label="Açık Risk (maliyet)" value={`${sum?.open_exposure_sol ?? "—"} SOL`} tone="var(--amber)" />
+        <StatCard label="Bugünkü Gerçekleşen" value={`${sum?.today_realized_pnl_sol ?? "—"} SOL`} tone="var(--violet)" icon={<TrendingUp size={18} />}
+          accent={(sum?.today_realized_pnl_sol ?? 0) >= 0 ? "var(--emerald)" : "var(--rose)"} />
       </div>
+
+      <div className="card mt-4 overflow-x-auto">
+        {positions && positions.length > 0 ? (
+          <table className="w-full text-sm">
+            <thead><tr className="border-b text-left muted" style={{ borderColor: "var(--border)" }}>
+              <th className="p-2">Token</th><th className="p-2">Lider</th><th className="p-2 text-right">Maliyet ◎</th>
+              <th className="p-2 text-right">Şu anki değer ◎</th><th className="p-2 text-right">Gerçekleşmemiş PnL</th>
+              <th className="p-2 text-center">Sat (canlı fiyat)</th>
+            </tr></thead>
+            <tbody>
+              {positions.map((p) => {
+                const up = (p.unrealized_pnl_sol ?? 0) >= 0;
+                const col = p.unrealized_pnl_sol == null ? "var(--muted)" : up ? "var(--emerald)" : "var(--rose)";
+                return (
+                  <tr key={p.token_mint} className="table-row border-b last:border-0" style={{ borderColor: "var(--border)" }}>
+                    <td className="p-2"><Link href={`/tokens/${p.token_mint}`} className="clickable font-mono text-xs">{shortAddr(p.token_mint)}</Link></td>
+                    <td className="p-2"><Link href={`/wallets/${p.wallet_address}`} className="clickable font-mono text-xs">{shortAddr(p.wallet_address)}</Link></td>
+                    <td className="p-2 text-right">{fmtNum(p.cost_sol, 4)}</td>
+                    <td className="p-2 text-right">{p.current_value_sol == null ? "—" : fmtNum(p.current_value_sol, 4)}</td>
+                    <td className="p-2 text-right font-bold" style={{ color: col }}>
+                      {p.unrealized_pnl_sol == null ? "—" : (
+                        <span className="inline-flex flex-col items-end leading-tight">
+                          <span>{up ? "+" : ""}{fmtNum(p.unrealized_pnl_sol, 4)} ◎</span>
+                          <span className="text-[11px] font-semibold">{up ? "▲" : "▼"} %{Math.abs(Math.round((p.unrealized_pnl_pct ?? 0) * 100))}</span>
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-2">
+                      <div className="flex items-center justify-center gap-2">
+                        <button className="btn" disabled={!!busy} onClick={() => sell(p, 0.5)}>%50</button>
+                        <button className="btn-danger" disabled={!!busy} onClick={() => sell(p, 1)}>%100</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : <EmptyState icon={Wallet} title="Açık pozisyon yok" hint="Takip cüzdanları alım yaptıkça pozisyonlar burada canlı PnL ile görünür." />}
+      </div>
+
+      <p className="mt-3 text-xs muted">
+        Gerçekleşmemiş PnL anlık piyasa fiyatıyla (DexScreener) hesaplanır; fiyat alınamayan token'lerde "—" gösterilir.
+        Satışlar paper (simülasyon) ve canlı fiyattan yapılır. Yatırım tavsiyesi değildir.
+      </p>
     </div>
   );
 }

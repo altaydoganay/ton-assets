@@ -42,7 +42,13 @@ def trading_summary(db: Session = Depends(get_db)):
 
 @stats_router.get("/positions")
 def positions(db: Session = Depends(get_db)):
-    return stats_service.open_positions(db)
+    """Açık pozisyonlar + CANLI gerçekleşmemiş PnL (anlık fiyatla)."""
+    from ..adapters.registry import build_market_provider
+    try:
+        market = build_market_provider()
+    except Exception:  # noqa: BLE001
+        market = None
+    return stats_service.open_positions(db, market=market)
 
 
 # --- Kurulum / sağlık ---
@@ -198,6 +204,38 @@ def close_position(mint: str, price_sol: float = Query(...), db: Session = Depen
     db.add(AuditLog(level="info", category="trading", message=f"Paper pozisyon manuel kapatıldı: {mint}"))
     db.commit()
     return {"closed": mint, "qty": round(qty, 2), "realized_pnl_sol": round(pnl, 4)}
+
+
+@stats_router.post("/positions/{mint}/sell")
+def sell_position(mint: str, fraction: float = Query(1.0, gt=0.0, le=1.0),
+                  db: Session = Depends(get_db)):
+    """Açık paper pozisyonunun `fraction` (0-1) kadarını CANLI piyasa fiyatından
+    satar — %50 / %100 düğmeleri için. Fiyatı sen girmezsin; anlık fiyat çekilir."""
+    from ..adapters.registry import build_market_provider
+    try:
+        market = build_market_provider()
+    except Exception:  # noqa: BLE001
+        market = None
+    p = {x["token_mint"]: x for x in stats_service.open_positions(db, market=market)}.get(mint)
+    if not p:
+        raise HTTPException(404, "Açık paper pozisyonu yok")
+    price = p.get("current_price_sol")
+    if not price:
+        raise HTTPException(400, "Canlı fiyat alınamadı — aşağıdaki manuel fiyatla kapatmayı kullan")
+    qty_sell = p["qty"] * fraction
+    proceeds = qty_sell * float(price)
+    cost_part = p["cost_sol"] * fraction
+    pnl = proceeds - cost_part
+    db.add(PaperTrade(
+        wallet_address=p["wallet_address"], token_mint=mint, side="sell",
+        sol_amount=proceeds, token_amount=qty_sell, price_sol=float(price), fee_sol=0.0,
+        realized_pnl_sol=pnl, is_open=False,
+        reason=f"manuel %{int(round(fraction*100))} sat (paper, canlı fiyat)"))
+    db.add(AuditLog(level="info", category="trading",
+                    message=f"Paper pozisyon %{int(round(fraction*100))} satıldı: {mint} · PnL {pnl:+.4f} SOL"))
+    db.commit()
+    return {"sold": mint, "fraction": fraction, "qty": round(qty_sell, 2),
+            "price_sol": float(price), "realized_pnl_sol": round(pnl, 4)}
 
 
 # --- CSV dışa aktarma ---

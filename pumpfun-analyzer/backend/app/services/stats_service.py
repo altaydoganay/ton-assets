@@ -137,10 +137,13 @@ def performance(db: Session) -> dict:
     }
 
 
-def open_positions(db: Session) -> list[dict]:
+def open_positions(db: Session, market=None) -> list[dict]:
     """Paper işlemlerden TÜRETİLMİŞ açık pozisyonlar (FIFO net).
 
     Bizim kopya hesabımızın token başına net açık miktarı ve maliyeti.
+    `market` verilirse her açık token için CANLI fiyat çekilir ve gerçekleşmemiş
+    PnL (SOL + %) hesaplanır — "şu an ne kadar artıda/eksideyiz". Canlı fiyat
+    alınamazsa son analizdeki fiyata düşülür; o da yoksa PnL None döner.
     """
     trades = db.query(PaperTrade).order_by(PaperTrade.created_at.asc()).all()
     pos: dict[str, dict] = {}
@@ -161,16 +164,35 @@ def open_positions(db: Session) -> list[dict]:
     for mint, p in pos.items():
         if p["qty"] <= 1e-9:
             continue
-        token = db.query(Token).filter(Token.mint == mint).first()
-        price = float((token.metrics or {}).get("price_sol", 0.0)) if token else 0.0
-        unreal = (p["qty"] * price - p["cost"]) if price else None
+        price = 0.0
+        if market is not None:
+            try:
+                md = market.get_token_market(mint)
+                if md and getattr(md, "ok", False) and getattr(md, "price_sol", None):
+                    price = float(md.price_sol)
+            except Exception:  # noqa: BLE001 — canlı fiyat alınamazsa cache'e düş
+                price = 0.0
+        if not price:
+            token = db.query(Token).filter(Token.mint == mint).first()
+            price = float((token.metrics or {}).get("price_sol", 0.0)) if token else 0.0
+        qty, cost = p["qty"], p["cost"]
+        avg_cost = (cost / qty) if qty else 0.0
+        value = (qty * price) if price else None
+        unreal = (value - cost) if value is not None else None
+        unreal_pct = (unreal / cost) if (unreal is not None and cost > 0) else None
         out.append({
             "token_mint": mint,
             "wallet_address": p["wallet"],
-            "qty": round(p["qty"], 2),
-            "cost_sol": round(p["cost"], 4),
+            "qty": round(qty, 2),
+            "cost_sol": round(cost, 4),
+            "avg_cost_sol": avg_cost,
+            "current_price_sol": price or None,
+            "current_value_sol": round(value, 4) if value is not None else None,
             "unrealized_pnl_sol": round(unreal, 4) if unreal is not None else None,
+            "unrealized_pnl_pct": round(unreal_pct, 4) if unreal_pct is not None else None,
         })
+    # En çok zararda olanlar üstte (dikkat gereken pozisyonlar önce)
+    out.sort(key=lambda r: (r["unrealized_pnl_sol"] if r["unrealized_pnl_sol"] is not None else 0.0))
     return out
 
 
