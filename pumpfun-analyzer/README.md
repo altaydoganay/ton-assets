@@ -83,6 +83,14 @@ docker compose up --build
 - Backend API + Swagger: http://localhost:8000/docs
 - Migrationlar backend konteyneri açılışında otomatik uygulanır.
 
+### Telefon / uzak erişim
+Paneli telefondan veya uzaktan **güvenli** şekilde açmak için (port açmadan, özel VPN):
+```bash
+bash scripts/setup-tailscale.sh
+```
+Ayrıntılar ve telefon adımları: [docs/REMOTE_ACCESS.md](docs/REMOTE_ACCESS.md).
+Panelde kimlik doğrulama yoktur; portları doğrudan internete **açmayın** — Tailscale kullanın.
+
 ## Yerel geliştirme
 
 **Backend** (harici servis olmadan, SQLite ile çalışabilir):
