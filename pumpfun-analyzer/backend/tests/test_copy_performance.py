@@ -50,32 +50,48 @@ def test_prune_blocks_on_consecutive_losses(db):
     _w(db, addr)
     for i in range(5):  # 5 ardışık zarar
         _sell(db, addr, f"L{i}", -0.1)
-    res = prune_underperformers(db, max_consecutive_losses=5, min_closed_trades=6, min_win_rate=0.0)
+    res = prune_underperformers(db, max_consecutive_losses=5, min_closed_trades=6, min_pnl_sol=0.0)
     assert res["pruned"] == 1
     db.refresh(db.query(Wallet).filter(Wallet.address == addr).first())
     assert db.query(Wallet).filter(Wallet.address == addr).first().status == WalletStatus.blocked.value
 
 
-def test_prune_winrate_respects_min_closed(db):
+def test_prune_pnl_respects_min_closed(db):
     _clean(db)
     addr = "PruneTooFew2222222222222222222222222222222"
     _w(db, addr)
-    # 3 kayıp (başarı %0) ama < min_closed 6 => yargılanmaz (ardışık devre dışı)
+    # 3 kayıp (PnL < 0) ama < min_closed 6 => yargılanmaz (ardışık devre dışı)
     _sell(db, addr, "A", -0.1); _sell(db, addr, "B", -0.1); _sell(db, addr, "C", -0.1)
-    res = prune_underperformers(db, max_consecutive_losses=99, min_closed_trades=6, min_win_rate=0.30)
+    res = prune_underperformers(db, max_consecutive_losses=99, min_closed_trades=6, min_pnl_sol=0.0)
     assert res["pruned"] == 0
     assert db.query(Wallet).filter(Wallet.address == addr).first().status == WalletStatus.tracked.value
 
 
-def test_prune_blocks_on_low_win_rate(db):
+def test_prune_blocks_on_negative_pnl(db):
     _clean(db)
-    addr = "PruneLowWin333333333333333333333333333333"
+    addr = "PruneNegPnl333333333333333333333333333333"
     _w(db, addr)
-    # 8 işlem, 2 kazanç 6 kayıp = %25 < %30 (ardışık devre dışı: max_consec=99)
+    # 8 işlem, toplam PnL negatif (-0.4) => ele (ardışık devre dışı: max_consec=99)
     for pnl in [0.1, -0.1, 0.1, -0.1, -0.1, -0.1, -0.1, -0.1]:
         _sell(db, addr, "M", pnl)
-    res = prune_underperformers(db, max_consecutive_losses=99, min_closed_trades=6, min_win_rate=0.30)
+    res = prune_underperformers(db, max_consecutive_losses=99, min_closed_trades=6, min_pnl_sol=0.0)
     assert res["pruned"] == 1
+
+
+def test_prune_keeps_low_winrate_but_profitable(db):
+    """ASIL NOKTA: düşük isabet ama bize PARA KAZANDIRAN cüzdan ELENMEZ.
+    %25 başarı (2/8) ama yüksek kazanç/kayıp oranı => toplam PnL pozitif."""
+    _clean(db)
+    addr = "KeepProfit77777777777777777777777777777777"
+    _w(db, addr)
+    # 6 küçük kayıp (-0.05 each = -0.30) + 2 büyük kazanç (+0.40 each = +0.80) => +0.50
+    for pnl in [0.4, -0.05, 0.4, -0.05, -0.05, -0.05, -0.05, -0.05]:
+        _sell(db, addr, "M", pnl)
+    st = wallet_copy_stats(db, addr)
+    assert st["win_rate"] < 0.30 and st["total_pnl_sol"] > 0  # düşük isabet, pozitif PnL
+    res = prune_underperformers(db, max_consecutive_losses=99, min_closed_trades=6, min_pnl_sol=0.0)
+    assert res["pruned"] == 0
+    assert db.query(Wallet).filter(Wallet.address == addr).first().status == WalletStatus.tracked.value
 
 
 def test_prune_disabled_noop(db):

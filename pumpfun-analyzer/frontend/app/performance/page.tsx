@@ -105,8 +105,10 @@ export default function Performance() {
       <div className="mt-4">
         <Section title="Cüzdan Bazlı Kopya Performansı">
           <p className="text-xs muted mb-3">
-            Her takip cüzdanını KOPYALAMANIN bize getirdiği sonuç. Ardışık zarar eşiğini aşan
-            cüzdanlar otomatik elenir (kırmızı "Elendi"). En kazandıranlar üstte.
+            Her takip cüzdanını KOPYALAMANIN bize getirdiği sonuç. Bize ZARAR ettiren
+            (kopya PnL &lt; 0) veya üst üste kaybeden cüzdanlar otomatik elenir (kırmızı
+            "Elendi"). Düşük başarı oranı tek başına eleme sebebi DEĞİLDİR — kâr ettiren
+            düşük-isabetli cüzdanlar korunur. En kazandıranlar üstte.
           </p>
           {copy && copy.length ? (
             <div className="overflow-x-auto">

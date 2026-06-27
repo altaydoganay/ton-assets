@@ -34,10 +34,10 @@ const FIELDS: { key: string; label: string; type: "number" | "bool" | "text"; hi
   { key: "max_hold_minutes", label: "Maks. Tutma Süresi (dk)", type: "number", hint: "Bu süre dolunca pozisyonu kapat (token sönmeden çık). 0 = kapalı" },
   { key: "min_confluence", label: "Min. Mutabakat (akıllı para)", type: "number", hint: "1 = kapalı. 2 = sadece 2+ takip cüzdanının kısa sürede aldığı token'i kopyala (daha güçlü sinyal)" },
   { key: "confluence_window_minutes", label: "Mutabakat Penceresi (dk)", type: "number", hint: "Kaç dakika içinde alımlar 'aynı anda' sayılsın" },
-  { key: "copy_prune_enabled", label: "Otomatik Eleme", type: "bool", hint: "Kopya performansı kötü cüzdanları otomatik engelle" },
-  { key: "copy_max_consecutive_losses", label: "Maks. Ardışık Zarar", type: "number", hint: "Bu kadar ardışık zarar eden cüzdan elenir (0 = kapalı)" },
+  { key: "copy_prune_enabled", label: "Otomatik Eleme", type: "bool", hint: "Bize ZARAR ettiren cüzdanları otomatik engelle (ölçüt: kopya PnL, başarı oranı DEĞİL)" },
+  { key: "copy_max_consecutive_losses", label: "Maks. Ardışık Zarar", type: "number", hint: "Bu kadar ardışık zarar eden cüzdan elenir — rug/bozulma sinyali (0 = kapalı)" },
   { key: "copy_min_closed_trades", label: "Eleme İçin Min. İşlem", type: "number", hint: "Bir cüzdanı yargılamadan önce en az bu kadar kapanmış işlem" },
-  { key: "copy_max_drawdown_sol", label: "Maks. Kopya Zararı (SOL)", type: "number", hint: "Kümülatif kopya PnL bu değerin altına düşerse cüzdan elenir" },
+  { key: "copy_min_pnl_sol", label: "Min. Kopya PnL (SOL)", type: "number", hint: "Yeterli işlemden sonra kopya PnL bu değerin ALTINDAYSA cüzdan elenir. 0 = bize zarar ettirenleri ele. Düşük isabetli ama kâr eden cüzdanlar KORUNUR." },
 ];
 
 const PROFILES = [

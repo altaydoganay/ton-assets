@@ -119,15 +119,21 @@ def token_copy_stats(db: Session) -> list[dict]:
 
 
 def prune_underperformers(db: Session, *, enabled: bool = True, max_consecutive_losses: int = 5,
-                          min_closed_trades: int = 6, min_win_rate: float = 0.30) -> dict:
+                          min_closed_trades: int = 6, min_pnl_sol: float = 0.0) -> dict:
     """Kopya performansı kötü cüzdanları ENGELLE (status=blocked).
 
-    Kriterler BÜTÇEDEN BAĞIMSIZDIR (kaybedilen SOL miktarına göre DEĞİL — herkesin
-    bütçesi farklı). Yeterli örneklem (>= `min_closed_trades` kapanmış işlem) sonrası:
-      - `max_consecutive_losses` (vars. 5) ardışık zarar, VEYA
-      - başarı oranı < `min_win_rate` (vars. %30).
-    Engellenen cüzdan tekrar takibe ALINMAZ (persist_wallet_score blocked'ı korur);
-    kullanıcı isterse panelden elle çözebilir.
+    Eleme ölçütü BAŞARI ORANI DEĞİL, BİZE GETİRDİĞİ KOPYA PnL'idir (beklenti).
+    Taze pump.fun token'lerinde ödeme asimetriktir: kârlı bir cüzdan %5-10 başarıyla
+    ama yüksek kazanç/kayıp oranıyla kazanabilir. Win-rate'e göre eleme, bize PARA
+    KAZANDIRAN bu düşük-isabetli cüzdanları yanlışlıkla atardı. Bu yüzden:
+
+    Yeterli örneklem (>= `min_closed_trades` kapanmış işlem) sonrası:
+      - kopya PnL < `min_pnl_sol` (vars. 0 = bize zarar ettiren) => ELE, VEYA
+      - `max_consecutive_losses` (vars. 5) ARDIŞIK zarar => ELE (rug/bozulma sinyali;
+        örneklemden bağımsız çünkü hızlı bir uyarıdır).
+
+    Win-rate yalnızca bilgilendirme amaçlı tutulur (panelde görünür), elemeyi
+    tetiklemez. Engellenen cüzdan tekrar takibe ALINMAZ; panelden elle çözülebilir.
     """
     if not enabled:
         return {"enabled": False, "checked": 0, "pruned": 0, "details": []}
@@ -138,8 +144,9 @@ def prune_underperformers(db: Session, *, enabled: bool = True, max_consecutive_
         reason = None
         if max_consecutive_losses > 0 and st["consecutive_losses"] >= max_consecutive_losses:
             reason = f"{st['consecutive_losses']} ardışık zarar"
-        elif st["closed_trades"] >= min_closed_trades and st["win_rate"] < min_win_rate:
-            reason = f"başarı oranı %{round(st['win_rate']*100)} (< %{round(min_win_rate*100)}, {st['closed_trades']} işlem)"
+        elif st["closed_trades"] >= min_closed_trades and st["total_pnl_sol"] < min_pnl_sol:
+            reason = (f"kopya PnL {st['total_pnl_sol']:+.4f} SOL "
+                      f"(< {min_pnl_sol:+.4f}, {st['closed_trades']} işlem, başarı %{round(st['win_rate']*100)})")
         if reason:
             w.status = WalletStatus.blocked.value
             db.add(AuditLog(

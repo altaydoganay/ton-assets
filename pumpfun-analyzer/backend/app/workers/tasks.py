@@ -276,7 +276,7 @@ def prune_underperformers() -> dict:
             enabled=bool(r.get("copy_prune_enabled", True)),
             max_consecutive_losses=int(r.get("copy_max_consecutive_losses", 5)),
             min_closed_trades=int(r.get("copy_min_closed_trades", 6)),
-            min_win_rate=float(r.get("copy_min_win_rate", 0.30)),
+            min_pnl_sol=float(r.get("copy_min_pnl_sol", 0.0)),
         )
     finally:
         db.close()

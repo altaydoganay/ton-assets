@@ -73,10 +73,14 @@ DEFAULTS: dict[str, dict] = {
         # (copy_overrides) her ikisini de geçersiz kılar.
         "paper_trade_sol": 0.01,
         # --- Kopya performansına göre OTOMATİK ELEME (bütçeden BAĞIMSIZ) ---
+        # Ölçüt BAŞARI ORANI DEĞİL, BİZE GETİRDİĞİ KOPYA PnL'idir: taze pump.fun
+        # token'lerinde kârlı bir cüzdan %5-10 isabetle ama yüksek kazanç/kayıp
+        # oranıyla kazanabilir; win-rate'e göre eleme bunları yanlışlıkla atardı.
         "copy_prune_enabled": True,
-        "copy_max_consecutive_losses": 5,   # N ardışık zarar => cüzdanı engelle
-        "copy_min_closed_trades": 6,        # başarı-oranı yargısı için en az N kapanmış işlem
-        "copy_min_win_rate": 0.30,          # başarı oranı bunun altındaysa engelle (% bazlı)
+        "copy_max_consecutive_losses": 5,   # N ardışık zarar => cüzdanı engelle (rug sinyali)
+        "copy_min_closed_trades": 6,        # PnL yargısı için en az N kapanmış işlem
+        "copy_min_pnl_sol": 0.0,            # kopya PnL bunun ALTINDAYSA engelle (vars. 0 = zarar ettiren)
+        "copy_min_win_rate": 0.30,          # (bilgilendirme amaçlı; eleme TETİKLEMEZ)
     },
     # Cüzdan-bazlı elle SOL override: {cüzdan_adresi: sol_miktarı}
     "copy_overrides": {},
@@ -209,6 +213,16 @@ def seed_defaults(db: Session) -> None:
             risk["max_follow_lag_seconds"] = 600
             set_setting(db, "risk", risk)
         set_setting(db, "_meta_risk_policy_v8", {"applied": True})
+
+    # v9: ELEME ÖLÇÜTÜ win-rate -> kopya PnL. Düşük isabetli ama yüksek kazanç/kayıp
+    # oranıyla bize PARA KAZANDIRAN cüzdanlar win-rate eşiğine takılıp eleniyordu.
+    # Artık yalnızca bize ZARAR ettiren (kopya PnL < 0) cüzdanlar elenir; win-rate
+    # bilgilendirme amaçlı kalır. Ardışık-zarar koruması aynen sürer.
+    if not db.query(Setting).filter(Setting.key == "_meta_risk_policy_v9").first():
+        risk = get_setting(db, "risk")
+        risk.setdefault("copy_min_pnl_sol", 0.0)
+        set_setting(db, "risk", risk)
+        set_setting(db, "_meta_risk_policy_v9", {"applied": True})
 
 
 def all_settings(db: Session) -> dict[str, dict]:
