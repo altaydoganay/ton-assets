@@ -220,6 +220,57 @@ def analyze_wallet(
     return result
 
 
+def rescore_wallets_from_storage(db: Session, *, budget_seconds: float = 20.0,
+                                 max_wallets: int = 5000) -> dict:
+    """Mevcut cüzdanları DEPOLANMIŞ swap'larla yeniden puanlar (kriter/eşik değişince).
+
+    ZİNCİRE GİTMEZ, KREDİ HARCAMAZ: yalnızca elimizdeki swap geçmişini yeni
+    uygunluk kuralları + eşikle (örn. takip eşiği 55, gevşeyen kriterler)
+    yeniden değerlendirir. Önceden 'rejected/below_threshold/analyzed' olan ama
+    artık eşiği geçen cüzdanlar TAKİBE alınır. `blocked` HARİÇ (kullanıcı/eleme
+    kararı korunur). Zaman bütçesi aşılırsa kalan sayısı `remaining` ile döner.
+    """
+    import time as _t
+    from ..models import Wallet, WalletStatus
+
+    statuses = [WalletStatus.rejected.value, WalletStatus.below_threshold.value,
+                WalletStatus.analyzed.value, WalletStatus.tracked.value,
+                WalletStatus.discovered.value]
+    wallets = (db.query(Wallet).filter(Wallet.status.in_(statuses))
+               .order_by(Wallet.latest_score.desc().nullslast()).limit(max_wallets).all())
+    before_tracked = sum(1 for w in wallets if w.status == WalletStatus.tracked.value)
+
+    start = _t.monotonic()
+    s = {"scanned": 0, "skipped_no_data": 0, "to_tracked": 0, "to_below": 0,
+         "to_rejected": 0, "promoted": [], "remaining": 0}
+    for i, w in enumerate(wallets):
+        if _t.monotonic() - start > budget_seconds:
+            s["remaining"] = len(wallets) - i
+            break
+        has_data = db.query(Swap.id).filter(Swap.wallet_address == w.address).first()
+        if not has_data:
+            s["skipped_no_data"] += 1  # discovered ama henüz işlem çekilmemiş (ingest gerekir)
+            continue
+        before = w.status
+        analyze_wallet(db, w.address)  # persist=True; w.status yerinde güncellenir
+        after = w.status
+        s["scanned"] += 1
+        if before != after:
+            if after == WalletStatus.tracked.value:
+                s["to_tracked"] += 1
+                if len(s["promoted"]) < 50:
+                    s["promoted"].append(w.address)
+            elif after == WalletStatus.below_threshold.value:
+                s["to_below"] += 1
+            elif after == WalletStatus.rejected.value:
+                s["to_rejected"] += 1
+    after_tracked = (db.query(Wallet)
+                     .filter(Wallet.status == WalletStatus.tracked.value).count())
+    s["before_tracked"] = before_tracked
+    s["after_tracked"] = after_tracked
+    return s
+
+
 def replay_transactions(db: Session, address: str, transactions: list[NormalizedTx]) -> int:
     """Kaydedilmiş NormalizedTx listesini hat üzerinden oynatır (test/backtest)."""
     count = 0

@@ -2,11 +2,12 @@
 import { useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
-import { fetcher, shortAddr } from "@/lib/api";
+import { fetcher, shortAddr, apiSend } from "@/lib/api";
 import { PageHeader } from "@/components/Confidence";
 import { Section } from "@/components/ui";
 import { Loading } from "@/components/States";
-import { Trophy, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { useToast } from "@/components/Toast";
+import { Trophy, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw } from "lucide-react";
 
 type Row = Record<string, any>;
 const COLS: { key: string; label: string; fmt?: (v: any, r?: Row) => string; right?: boolean }[] = [
@@ -21,9 +22,27 @@ const COLS: { key: string; label: string; fmt?: (v: any, r?: Row) => string; rig
 ];
 
 export default function Leaderboard() {
-  const { data } = useSWR<Row[]>("/wallets/leaderboard", fetcher, { refreshInterval: 30000 });
+  const { data, mutate } = useSWR<Row[]>("/wallets/leaderboard", fetcher, { refreshInterval: 30000 });
   const [sortKey, setSortKey] = useState("score");
   const [dir, setDir] = useState<1 | -1>(-1);
+  const [scanning, setScanning] = useState(false);
+  const toast = useToast();
+
+  async function rescan() {
+    setScanning(true);
+    try {
+      const r: any = await apiSend("/wallets/rescan", "POST");
+      await mutate();
+      const promoted = r.to_tracked ?? 0;
+      const remain = r.remaining ? ` · ${r.remaining} kaldı (tekrar çalıştır)` : "";
+      toast(promoted > 0 ? "success" : "info",
+        `Tarandı: ${r.scanned ?? 0} cüzdan · +${promoted} yeni takibe alındı ` +
+        `(toplam takip: ${r.after_tracked ?? "?"})${remain}`);
+    } catch (e: any) {
+      toast("error", e?.message || "Yeniden tarama başarısız");
+    } finally { setScanning(false); }
+  }
+
   if (!data) return <Loading />;
 
   const rows = [...data].sort((a, b) => {
@@ -41,7 +60,13 @@ export default function Leaderboard() {
   return (
     <div>
       <PageHeader title="🏆 Cüzdan Sıralaması"
-        subtitle="Takip ettiğimiz cüzdanların KENDİ al-sat performansı. Başlıklara tıklayıp sırala — kim ne kadar kazanıyor net gör." />
+        subtitle="Takip ettiğimiz cüzdanların KENDİ al-sat performansı. Başlıklara tıklayıp sırala — kim ne kadar kazanıyor net gör."
+        action={
+          <button className="btn" onClick={rescan} disabled={scanning} title="Mevcut cüzdanları yeni kriterlerle yeniden puanlar (kredi harcamaz)">
+            <RefreshCw size={15} className={scanning ? "animate-spin" : ""} />
+            {scanning ? "Taranıyor…" : "Yeniden Tara"}
+          </button>
+        } />
       <Section title={`${rows.length} cüzdan · ${COLS.find((c) => c.key === sortKey)?.label}'a göre sıralı`}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

@@ -34,6 +34,18 @@ def _ingest_and_score(db: Session, address: str, limit: int):
     return analyze_wallet(db, address)
 
 
+@router.post("/rescan")
+def rescan_wallets(db: Session = Depends(get_db)):
+    """Mevcut cüzdanları DEPOLANMIŞ swap'larla yeniden puanlar (kredi harcamaz).
+
+    Kriter/eşik değişikliğinden (örn. takip eşiği 55 + gevşeyen uygunluk) sonra
+    eski 'rejected/below_threshold/analyzed' kararlarını günceller; artık eşiği
+    geçen cüzdanlar TAKİBE alınır. Zincire gitmez. Büyük havuzlarda zaman
+    bütçesi (20sn) aşılırsa kalan `remaining` ile döner — tekrar çağrılabilir."""
+    from ..services.pipeline import rescore_wallets_from_storage
+    return rescore_wallets_from_storage(db)
+
+
 @router.get("", response_model=list[WalletOut])
 def list_wallets(
     status: str | None = Query(None),
