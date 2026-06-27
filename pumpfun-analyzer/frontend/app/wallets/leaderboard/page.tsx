@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import useSWR from "swr";
 import Link from "next/link";
 import { fetcher, shortAddr, apiSend } from "@/lib/api";
@@ -29,6 +29,25 @@ export default function Leaderboard() {
   const [scanning, setScanning] = useState(false);
   const [draining, setDraining] = useState(false);
   const toast = useToast();
+  const drain = backlog?.last_drain;
+  const isRunning = !!drain?.running;
+  // Çalışırken backlog'u sık güncelle (canlı ilerleme)
+  useEffect(() => {
+    if (!isRunning) return;
+    const id = setInterval(() => { mutBacklog(); mutate(); }, 4000);
+    return () => clearInterval(id);
+  }, [isRunning, mutBacklog, mutate]);
+  // running -> bitti geçişinde bildirim göster
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (wasRunning.current && drain && !drain.running) {
+      toast(drain.reason ? "info" : "success",
+        `Backlog analizi bitti: ${drain.processed} işlendi · +${drain.tracked} takibe · ${drain.remaining} kaldı`
+        + (drain.reason ? ` (${drain.reason})` : ""));
+      mutate();
+    }
+    wasRunning.current = !!drain?.running;
+  }, [drain, toast, mutate]);
 
   async function rescan() {
     setScanning(true);
@@ -83,7 +102,7 @@ export default function Leaderboard() {
             {scanning ? "Taranıyor…" : "Yeniden Tara"}
           </button>
         } />
-      {backlog && backlog.pending > 0 && (
+      {backlog && (backlog.pending > 0 || isRunning) && (
         <div className="card mb-4" style={{ borderColor: "var(--amber)", borderWidth: 1 }}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -93,15 +112,24 @@ export default function Leaderboard() {
                 Analiz etmek <b>Helius kredisi harcar</b> (~10 kredi/cüzdan). Ne kadar analiz edeceğini sen seç —
                 arka planda çalışır, durdurmak için tekrar başlatma.
               </p>
-              {backlog.last_drain && (
+              {isRunning ? (
+                <p className="text-xs mt-1" style={{ color: "var(--amber)" }}>
+                  ⏳ Şu an çalışıyor: {drain.processed} işlendi · +{drain.tracked} takibe alındı… (canlı güncelleniyor)
+                </p>
+              ) : drain && (
                 <p className="text-xs muted mt-1">
-                  Son analiz: {backlog.last_drain.processed} işlendi · +{backlog.last_drain.tracked} takibe ·
-                  {" "}{backlog.last_drain.remaining?.toLocaleString?.("tr-TR") ?? backlog.last_drain.remaining} kaldı
+                  Son analiz: {drain.processed} işlendi · +{drain.tracked} takibe ·
+                  {" "}{drain.remaining?.toLocaleString?.("tr-TR") ?? drain.remaining} kaldı
+                  {drain.reason ? ` · ⚠️ ${drain.reason}` : ""}
                 </p>
               )}
             </div>
             <div className="flex flex-wrap gap-2">
-              {[500, 2000, 5000].map((n) => (
+              {isRunning ? (
+                <span className="badge inline-flex items-center gap-2" style={{ background: "color-mix(in srgb, var(--amber) 18%, transparent)", color: "var(--amber)" }}>
+                  <RefreshCw size={14} className="animate-spin" /> Analiz sürüyor…
+                </span>
+              ) : [500, 2000, 5000].map((n) => (
                 <button key={n} className="btn" disabled={draining} onClick={() => drainBacklog(n)}>
                   {n.toLocaleString("tr-TR")} analiz (~{(n * 10).toLocaleString("tr-TR")} kredi)
                 </button>

@@ -305,33 +305,61 @@ def drain_backlog(count: int = 2000, ingest_limit: int = 80, budget_seconds: int
     ki panel ilerlemeyi göstersin. Singleton kilit: paralel drain olmaz."""
     import time as _t
     from datetime import datetime, timezone
+    from ..models import AuditLog
     from ..services.discovery import analyze_discovered_batch, count_pending
     from ..services.settings_service import set_setting
+
+    def _progress(db, *, running, processed, tracked, started_at, reason=None):
+        set_setting(db, "_meta_backlog_drain", {
+            "running": running, "processed": processed, "tracked": tracked,
+            "remaining": count_pending(db), "started_at": started_at,
+            "ts": datetime.now(timezone.utc).isoformat(), "reason": reason})
+
+    def _audit(db, msg):
+        try:
+            db.add(AuditLog(level="info", category="discovery", message=msg)); db.commit()
+        except Exception:  # noqa: BLE001
+            db.rollback()
 
     db = SessionLocal()
     try:
       with _singleton("drain_backlog", ttl=budget_seconds + 60) as got:
         if not got:
             return {"skipped": "zaten çalışıyor"}
+        started_at = datetime.now(timezone.utc).isoformat()
+        # Worker'ın görevi GERÇEKTEN aldığının kanıtı (Loglar panelinde görünür).
+        _audit(db, f"🔍 Backlog analizi BAŞLADI — hedef {count} cüzdan (~{count*10} kredi)")
+        _progress(db, running=True, processed=0, tracked=0, started_at=started_at)
         try:
             chain = build_chain_provider(throttle=True)  # keşif: RPS/kredi koruması açık
         except Exception as exc:  # noqa: BLE001
             logger.info("Zincir sağlayıcı kurulamadı (drain): %s", exc)
+            _progress(db, running=False, processed=0, tracked=0, started_at=started_at,
+                      reason="zincir sağlayıcı kurulamadı (HELIUS_API_KEY/RPC?)")
+            _audit(db, "Backlog analizi DURDU — zincir sağlayıcı kurulamadı")
             return {"error": "provider"}
         start = _t.monotonic()
         processed = tracked = 0
+        stalled = False
         while processed < count and (_t.monotonic() - start) < budget_seconds:
             chunk = min(25, count - processed)
             res = analyze_discovered_batch(db, chain, limit=chunk, ingest_limit=ingest_limit)
             if not res:
+                stalled = True
                 break  # backlog bitti ya da RPC down (analyze_discovered_batch break eder)
             processed += len(res)
             tracked += sum(1 for r in res if r.get("tracked"))
+            _progress(db, running=True, processed=processed, tracked=tracked, started_at=started_at)
         remaining = count_pending(db)
-        summary = {"processed": processed, "tracked": tracked, "remaining": remaining,
-                   "ts": datetime.now(timezone.utc).isoformat()}
-        set_setting(db, "_meta_backlog_drain", summary)
+        reason = None
+        if processed == 0 and stalled:
+            reason = ("hiç işlenmedi — RPC/Helius erişilemiyor olabilir veya backlog boş"
+                      if remaining else "backlog boş")
+        _progress(db, running=False, processed=processed, tracked=tracked,
+                  started_at=started_at, reason=reason)
+        _audit(db, f"✅ Backlog analizi BİTTİ — {processed} işlendi · +{tracked} takibe · {remaining} kaldı"
+               + (f" ({reason})" if reason else ""))
         logger.info("[DRAIN] processed=%d tracked=%d remaining=%d", processed, tracked, remaining)
-        return summary
+        return {"processed": processed, "tracked": tracked, "remaining": remaining, "reason": reason}
     finally:
         db.close()
