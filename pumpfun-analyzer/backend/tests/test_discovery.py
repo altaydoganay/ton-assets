@@ -38,8 +38,9 @@ def test_pending_candidates_lists_discovered(db):
 
 
 def _seed_good_swaps(db, addr):
-    """12 token, 24 kapalı kârlı pozisyon, ~55 günlük geçmiş."""
-    base = datetime.now(timezone.utc) - timedelta(days=60)
+    """12 token, 24 kapalı kârlı pozisyon, ~50 günlük geçmiş; SON işlem ~2 gün önce
+    (aktiflik kriterini geçer: max_days_since_last_trade=7)."""
+    base = datetime.now(timezone.utc) - timedelta(days=53)
     i = 0
     pfx = addr[:8]  # imzaları cüzdana özel yap (test izolasyonu)
     for tok in range(12):

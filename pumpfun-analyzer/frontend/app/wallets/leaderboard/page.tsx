@@ -7,8 +7,9 @@ import { PageHeader } from "@/components/Confidence";
 import { Section } from "@/components/ui";
 import { Loading } from "@/components/States";
 import { useToast } from "@/components/Toast";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { CountUp } from "@/components/CountUp";
-import { Trophy, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Crown, Medal, Award } from "lucide-react";
+import { Trophy, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Crown, Medal, Award, Filter } from "lucide-react";
 
 type Row = Record<string, any>;
 
@@ -42,6 +43,28 @@ export default function Leaderboard() {
   const autoOn = !!backlog?.autodrain;
   const isRunning = !!drain?.running;
   const [autoBusy, setAutoBusy] = useState(false);
+  const [culling, setCulling] = useState(false);
+  const { confirm, dialog } = useConfirm();
+
+  async function cull(preset: "strict" | "balanced" | "light") {
+    const names: any = { strict: "Sıkı", balanced: "Dengeli", light: "Hafif" };
+    setCulling(true);
+    try {
+      const prev: any = await apiSend(`/wallets/cull?preset=${preset}&dry_run=true`, "POST");
+      const ok = await confirm({
+        title: `Eleme önizleme — ${names[preset]}`,
+        body: `${prev.tracked_before} takip cüzdanından ${prev.kept} KALIR, ${prev.dropped} elenir ` +
+              `(${prev.dropped_quality} kalite + ${prev.dropped_cap} üst sınır). Düşenler "below_threshold"a alınır ` +
+              `(silinmez, toparlarsa geri döner) ve takip barı skor ${prev.criteria.min_score || "—"}'e yükseltilir. Uygulansın mı?`,
+        confirmText: "Evet, ele", danger: true,
+      });
+      if (!ok) return;
+      const r: any = await apiSend(`/wallets/cull?preset=${preset}&dry_run=false`, "POST");
+      await mutate();
+      toast("success", `Eleme uygulandı: ${r.kept} kaldı, ${r.dropped} elendi.`);
+    } catch (e: any) { toast("error", e?.message || "Eleme başarısız"); }
+    finally { setCulling(false); }
+  }
 
   async function toggleAuto(next: boolean) {
     setAutoBusy(true);
@@ -121,6 +144,7 @@ export default function Leaderboard() {
 
   return (
     <div>
+      {dialog}
       <PageHeader title="Cüzdan Sıralaması" icon={<Trophy size={22} />}
         subtitle="Takip ettiğimiz cüzdanların KENDİ al-sat performansı. Başlıklara tıklayıp sırala — kim ne kadar kazanıyor net gör."
         action={
@@ -129,6 +153,27 @@ export default function Leaderboard() {
             {scanning ? "Taranıyor…" : "Yeniden Tara"}
           </button>
         } />
+
+      {/* Eleme — kaliteye göre süzme */}
+      {data.length > 30 && (
+        <div className="card mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 font-semibold"><Filter size={16} className="brand" /> Cüzdanları Ele</div>
+              <p className="text-xs muted mt-1 max-w-xl">
+                Aktiflik + kârlılık (profit factor & PnL) + örneklem/çeşitlilik + skora göre süzer.
+                Önce <b>önizleme</b> gösterir (kaç kalır/elenir), onaylarsan uygular. Düşenler silinmez,
+                "below_threshold"a alınır; takip barı yükseltilir ki <b>kalıcı</b> olsun.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button className="btn-danger" disabled={culling} onClick={() => cull("strict")} title="En iyi ~150 (aktif, PF≥1.3, ≥10 kapanış, ≥5 token, skor≥68)">Sıkı (~150)</button>
+              <button className="btn" disabled={culling} onClick={() => cull("balanced")} title="~250-300 (aktif, PF≥1.1, ≥6 kapanış, ≥3 token, skor≥62)">Dengeli</button>
+              <button className="btn-ghost" disabled={culling} onClick={() => cull("light")} title="Sadece uyuyan/zarar eden">Hafif</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Podyum — en çok kazandıran ilk 3 cüzdan */}
       {podium.length >= 3 && (

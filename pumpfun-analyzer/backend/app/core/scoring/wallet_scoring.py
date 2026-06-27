@@ -37,12 +37,12 @@ DEFAULT_WEIGHTS = {
 # TUTARLI trader'ları geçirip tek-atışlık/rug cüzdanları elemeye dengelenmiştir.
 # Tümü panelden değiştirilebilir (API ve RPC Ayarları).
 DEFAULT_ELIGIBILITY = {
-    # GENİŞ AĞ (paper aşaması): daha az geçmişle aday kabul et — filtrelerimize
-    # takılan ama kâr eden cüzdanları da takibe alıp kopya performansıyla ölç.
-    # Canlıya geçerken bu kriterler sıkılaştırılabilir.
-    "min_closed_positions": 4,
-    "min_distinct_tokens": 2,
-    "min_history_days": 0.5,
+    # KALİTE AŞAMASI: geniş ağ ile 500+ aday toplandı; artık daha seçiciyiz.
+    # Bu kriterler hem yeni takibe alımı hem de yeniden değerlendirmeyi (eleme
+    # KALICI olsun diye) bağlar. Daha gevşek değerler keşif/havuz-büyütme içindi.
+    "min_closed_positions": 8,         # yeterli örneklem (tek-iki işlem değil)
+    "min_distinct_tokens": 4,          # birden çok tokende tutarlılık (şans değil)
+    "min_history_days": 1.0,
     # Kârlı pump.fun trader'ları çoğu zaman %40-50 isabetle ama yüksek profit
     # factor ile kazanır; yüksek eşik bu profilleri sessizce eliyordu. Kaliteyi
     # win-rate değil; profit factor + organik/sniper/veto + toplam puan belirler.
@@ -52,9 +52,9 @@ DEFAULT_ELIGIBILITY = {
     "max_short_hold_ratio": 0.70,      # <10 dk kapanışlar
     "max_single_trade_pnl_share": 0.75,
     # AKTİF cüzdana öncelik: kopya-ticarette uyuyan (son N gün işlem yapmamış)
-    # bir cüzdanı takip etmek anlamsızdır — yeni alımı gelmez. Bu kadar gün
-    # işlem yapmamış cüzdan takibe ALINMAZ (geçmişi iyi olsa bile).
-    "max_days_since_last_trade": 14,
+    # bir cüzdanı takip etmek anlamsızdır — yeni alımı gelmez. 7 gün = pump.fun
+    # için makul "hâlâ aktif" penceresi (eski 14 çok gevşekti).
+    "max_days_since_last_trade": 7,
 }
 
 

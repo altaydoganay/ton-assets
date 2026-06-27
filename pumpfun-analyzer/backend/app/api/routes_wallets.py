@@ -34,6 +34,23 @@ def _ingest_and_score(db: Session, address: str, limit: int):
     return analyze_wallet(db, address)
 
 
+@router.post("/cull")
+def cull_wallets_endpoint(preset: str = Query("balanced"), dry_run: bool = Query(True),
+                          db: Session = Depends(get_db)):
+    """Takip cüzdanlarını kaliteye göre ELE (aktiflik + kârlılık + örneklem + skor).
+
+    preset: strict | balanced | light. dry_run=true => yalnızca ÖNİZLEME (kaç kalır/
+    elenir), yazmaz. dry_run=false => uygular (düşenler below_threshold'a) ve barı
+    (thresholds.wallet) preset skoruna yükseltir ki eleme KALICI olsun."""
+    from ..services.culling import cull_wallets, CULL_PRESETS
+    if preset not in CULL_PRESETS:
+        raise HTTPException(400, f"Bilinmeyen preset: {preset}")
+    res = cull_wallets(db, preset, dry_run=dry_run)
+    if not dry_run:
+        logger.info("[CULL] preset=%s kept=%s dropped=%s", preset, res["kept"], res["dropped"])
+    return res
+
+
 @router.post("/rescan")
 def rescan_wallets(db: Session = Depends(get_db)):
     """Mevcut cüzdanları DEPOLANMIŞ swap'larla yeniden puanlar (kredi harcamaz).
