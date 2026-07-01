@@ -78,11 +78,17 @@ curl -s -X POST "$SOLANA_RPC_URL" -H 'content-type: application/json' \
 - **Teknik Loglar** → `[LISTENER] Helius WS connected` benzeri satır (WS bağlandı).
   Ardından takip/keşif olayları akmaya başlar.
 
-**c) WebSocket (logsSubscribe) desteği — kritik:**
-Chainstack'in çoğu Solana node'u WS `logsSubscribe`'ı destekler, ama **free/shared**
-planda abonelik limiti olabilir. Panelde "dinleyici bağlı" görünüp olay gelmiyorsa,
-free plan WS'i kısıtlıyor olabilir — bu durumda RPC-poll yolu (zaten var) devreye girer
-ve copy yine çalışır (biraz gecikmeli).
+**c) WebSocket (logsSubscribe) — ÖNEMLİ NOT (build 82 ile çözüldü):**
+Chainstack shared node'u `logsSubscribe`'ı **`mentions` filtresiyle DESTEKLEMEZ**
+(aboneliği kabul eder ama hiç bildirim göndermez). Sadece `logsSubscribe "all"` çalışır.
+Bizim dinleyicimiz bunu otomatik halleder: **`WS_LOGS_MODE=auto`** (varsayılan) →
+Helius anahtarı yoksa **"all"** modunu seçer → tüm logları alıp **pump.fun'ı
+client-side filtreler**. Böylece copy + AI Chainstack'te çalışır. (Canlı Chainstack
+verisiyle uçtan uca doğrulandı.)
+
+Maliyet notu: "all" modu daha çok WS bant genişliği kullanır (tüm Solana logları),
+ama getTransaction yalnız pump.fun işlemlerine yapılır (rate-limitli) → RPC kredisi
+kontrollü, SOL harcanmaz.
 
 ---
 

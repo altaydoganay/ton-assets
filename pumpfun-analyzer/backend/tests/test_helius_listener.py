@@ -74,6 +74,30 @@ def test_build_ai_trades_ignores_non_swap():
     assert build_ai_trades(tx) == []
 
 
+def test_logs_mention_pumpfun():
+    from app.workers.helius_listener import logs_mention_pumpfun
+    assert logs_mention_pumpfun([f"Program {PUMP_FUN_PROGRAM} invoke [1]", "Program log: buy"]) is True
+    assert logs_mention_pumpfun(["Program SomeOther111 invoke [1]"]) is False
+    assert logs_mention_pumpfun([]) is False
+    assert logs_mention_pumpfun(None) is False
+
+
+def test_resolve_logs_mode(monkeypatch):
+    from app import config as cfg
+    import app.workers.helius_listener as hl
+    # açık seçim
+    monkeypatch.setattr(cfg.settings, "ws_logs_mode", "all", raising=False)
+    assert hl._resolve_logs_mode() == "all"
+    monkeypatch.setattr(cfg.settings, "ws_logs_mode", "mentions", raising=False)
+    assert hl._resolve_logs_mode() == "mentions"
+    # auto: Helius anahtarı varsa mentions, yoksa all (Chainstack)
+    monkeypatch.setattr(cfg.settings, "ws_logs_mode", "auto", raising=False)
+    monkeypatch.setattr(cfg.settings, "helius_api_key", "", raising=False)
+    assert hl._resolve_logs_mode() == "all"
+    monkeypatch.setattr(cfg.settings, "helius_api_key", "realkey123", raising=False)
+    assert hl._resolve_logs_mode() == "mentions"
+
+
 def test_ai_cooldown_dedups_same_mint():
     from app.workers.helius_listener import HeliusListener
     lis = HeliusListener()

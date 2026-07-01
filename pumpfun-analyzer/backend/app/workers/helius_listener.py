@@ -126,6 +126,28 @@ def build_ai_trades(ntx) -> list[PumpPortalTrade]:
     return out
 
 
+def _resolve_logs_mode() -> str:
+    """Etkin WS logsSubscribe modu: 'mentions' veya 'all'."""
+    m = (settings.ws_logs_mode or "auto").lower()
+    if m in ("mentions", "all"):
+        return m
+    # auto: Helius (mentions'ı destekler) → mentions; aksi (Chainstack/standart) → all
+    return "mentions" if settings.helius_api_key else "all"
+
+
+def logs_mention_pumpfun(logs) -> bool:
+    """'all' akışındaki bir log bildiriminde pump.fun/pumpswap programı geçiyor mu?
+
+    getTransaction'a GİTMEDEN ucuz ön-eleme (Chainstack 'all' modunda tüm Solana
+    logları gelir; sadece pump.fun'ları getTransaction'a alırız — kredi koruması)."""
+    if not logs:
+        return False
+    for line in logs:
+        if PUMP_FUN_PROGRAM in line or PUMP_SWAP_PROGRAM in line:
+            return True
+    return False
+
+
 class _RateLimiter:
     """Dakikalık kayan pencere sayacı."""
     def __init__(self, per_min: int):
@@ -162,6 +184,11 @@ class HeliusListener:
         self.strategy_mode = "copy"
         self._ai_last_by_mint: dict[str, float] = {}
         self.stat_ai_signals = 0
+        # WS logsSubscribe modu: 'mentions' (Helius) veya 'all' (Chainstack/standart).
+        # 'all' modunda tek firehose aboneliği + client-side pump.fun filtresi ile
+        # copy+AI+keşif beslenir (Chainstack mentions'ı desteklemediği için).
+        self.logs_mode = "mentions"
+        self.tracked_set: set[str] = set()
 
     def _next_id(self) -> int:
         self._req_id += 1
@@ -197,6 +224,25 @@ class HeliusListener:
         self.subscribed_accounts.clear()
         self.discovery_sub_active = False
 
+    async def _subscribe_firehose(self, ws):
+        """'all' modu: tek logsSubscribe['all'] aboneliği (Chainstack uyumlu).
+        pump.fun filtresi client-side yapılır (process → logs_mention_pumpfun)."""
+        rid = self._next_id()
+        self.pending[rid] = ("firehose", None)
+        await ws.send(json.dumps({
+            "jsonrpc": "2.0", "id": rid, "method": "logsSubscribe",
+            "params": ["all", {"commitment": "confirmed"}],
+        }))
+
+    async def _unsubscribe_kind(self, ws, kind: str):
+        for sid in [s for s, (k, _w) in list(self.sub_meta.items()) if k == kind]:
+            try:
+                await ws.send(json.dumps({"jsonrpc": "2.0", "id": self._next_id(),
+                                          "method": "logsUnsubscribe", "params": [sid]}))
+            except Exception:  # noqa: BLE001
+                pass
+            self.sub_meta.pop(sid, None)
+
     async def _refresh(self, ws):
         listener_was_on = True
         while True:
@@ -220,28 +266,36 @@ class HeliusListener:
                 listener_was_on = True
                 # A1: AI modunda firehose ZORUNLU (AI token-fırsat evreni oradan gelir).
                 self.strategy_mode = await asyncio.to_thread(_strategy_mode)
+                self.logs_mode = _resolve_logs_mode()
+                self.tracked_set = set(_tracked_addresses())
                 want_discovery = (await asyncio.to_thread(_discovery_on)) or self.strategy_mode == "ai"
-                if want_discovery and not self.discovery_sub_active:
-                    await self._subscribe_logs(ws, PUMP_FUN_PROGRAM, "discovery", None)
-                    self.discovery_sub_active = True
-                    # Mezun olmuş (PumpSwap) token alıcıları da kaliteli sinyaldir
-                    await self._subscribe_logs(ws, PUMP_SWAP_PROGRAM, "discovery", None)
-                    logger.info("[LISTENER] keşif akışı AÇIK (pump.fun firehose)")
-                elif not want_discovery and self.discovery_sub_active:
-                    # Firehose'u DURDUR: discovery aboneliklerini iptal et (kredi koruması)
-                    for sid in [s for s, (k, _w) in self.sub_meta.items() if k == "discovery"]:
-                        try:
-                            await ws.send(json.dumps({"jsonrpc": "2.0", "id": self._next_id(),
-                                                      "method": "logsUnsubscribe", "params": [sid]}))
-                        except Exception:  # noqa: BLE001
-                            pass
-                        self.sub_meta.pop(sid, None)
-                    self.discovery_sub_active = False
-                    logger.info("[LISTENER] keşif akışı KAPALI (firehose durduruldu — kredi koruması)")
-                current = set(_tracked_addresses())
-                for addr in current - self.subscribed_accounts:
-                    await self._subscribe_logs(ws, addr, "tracked", addr)
-                    self.subscribed_accounts.add(addr)
+
+                if self.logs_mode == "all":
+                    # CHAINSTACK/STANDART: mentions çalışmaz → tek 'all' firehose +
+                    # client-side pump.fun filtresi. copy + AI + keşif hepsi buradan.
+                    need = want_discovery or self.strategy_mode == "ai" or bool(self.tracked_set)
+                    if need and not self.discovery_sub_active:
+                        await self._subscribe_firehose(ws)
+                        self.discovery_sub_active = True
+                        logger.info("[LISTENER] 'all' firehose AÇIK (mentions desteklenmeyen node — client-side pump.fun filtresi)")
+                    elif not need and self.discovery_sub_active:
+                        await self._unsubscribe_kind(ws, "firehose")
+                        self.discovery_sub_active = False
+                        logger.info("[LISTENER] 'all' firehose KAPALI")
+                else:
+                    # HELIUS: mentions modu (adres filtreli, düşük bant genişliği).
+                    if want_discovery and not self.discovery_sub_active:
+                        await self._subscribe_logs(ws, PUMP_FUN_PROGRAM, "discovery", None)
+                        self.discovery_sub_active = True
+                        await self._subscribe_logs(ws, PUMP_SWAP_PROGRAM, "discovery", None)
+                        logger.info("[LISTENER] keşif akışı AÇIK (pump.fun firehose)")
+                    elif not want_discovery and self.discovery_sub_active:
+                        await self._unsubscribe_kind(ws, "discovery")
+                        self.discovery_sub_active = False
+                        logger.info("[LISTENER] keşif akışı KAPALI (firehose durduruldu — kredi koruması)")
+                    for addr in self.tracked_set - self.subscribed_accounts:
+                        await self._subscribe_logs(ws, addr, "tracked", addr)
+                        self.subscribed_accounts.add(addr)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Abonelik tazeleme hatası: %s", exc)
             await asyncio.sleep(REFRESH_SECONDS)
@@ -277,6 +331,12 @@ class HeliusListener:
             if self.limiter.allow():
                 await asyncio.to_thread(self._handle_discovery, sig)
             # limit aşıldıysa bu keşif olayını düşür (kredi koruması)
+        elif kind == "firehose":
+            # 'all' modu: ÖNCE ucuz log filtresi (pump.fun mı?), sonra rate-limited
+            # getTransaction. Tüm Solana logları gelir; sadece pump.fun'ları işleriz.
+            logs = value.get("logs") or []
+            if logs_mention_pumpfun(logs) and self.limiter.allow():
+                await asyncio.to_thread(self._handle_firehose, sig)
 
     def _fetch_ntx(self, sig: str):
         raw = self.chain.get_transaction(sig)
@@ -331,6 +391,52 @@ class HeliusListener:
                 self._route_ai_signals(ntx)
         except Exception as exc:  # noqa: BLE001
             logger.warning("[DISCOVERY] olay atlandı: %s", exc)
+
+    def _handle_firehose(self, sig: str):
+        """'all' modu: pump.fun işlemini işle → keşif + (AI veya copy) yönlendir.
+
+        mentions çalışmayan node'larda (Chainstack) copy da AI da buradan beslenir:
+        firehose'daki her pump.fun alımı → keşif aday kaydı; AI modunda AI sinyali;
+        copy modunda alıcı/satıcı TAKİPTEyse copy sinyali."""
+        self.stat_lookups += 1
+        try:
+            ntx = self._fetch_ntx(sig)
+            if ntx is None:
+                return
+            for wallet, mint in extract_buyers(ntx):
+                self._record_buyer(wallet, mint)
+            if self.strategy_mode == "ai":
+                self._route_ai_signals(ntx)
+            else:
+                self._route_copy_signals(ntx)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[FIREHOSE] olay atlandı: %s", exc)
+
+    def _route_copy_signals(self, ntx):
+        """Firehose'daki TAKİP EDİLEN cüzdan swap'larını (alım+satım) copy motoruna
+        yönlendir. 'all' modunda per-wallet mentions çalışmadığından copy buradan gelir."""
+        involved = set(ntx.sol_deltas.keys()) | {o for (o, _m) in ntx.token_deltas.keys()}
+        leaders = involved & self.tracked_set
+        if not leaders:
+            return
+        db = SessionLocal()
+        try:
+            for wallet in leaders:
+                swap = detect_swap(ntx, wallet)
+                if swap is None:
+                    continue
+                trade = PumpPortalTrade(
+                    signature=swap.signature, trader=wallet, mint=swap.token_mint,
+                    side=swap.side, sol_amount=swap.sol_amount, token_amount=swap.token_amount,
+                    pool=swap.venue, market_cap_sol=None, raw={},
+                )
+                try:
+                    handle_trade_event(db, trade, chain=self.chain,
+                                       notifier=self.notifier, signer=self.signer)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("[FIREHOSE-COPY] işlenemedi %s: %s", wallet[:6], exc)
+        finally:
+            db.close()
 
     def _route_ai_signals(self, ntx):
         trades = build_ai_trades(ntx)

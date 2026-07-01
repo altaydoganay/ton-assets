@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     app_name: str = "Pump.fun Cüzdan Analizcisi"
     # SÜRÜM/BUILD numarası — her anlamlı güncellemede artar. Panelin üst barında
     # ve /health'te gösterilir; deploy'un doğru kodu aldığını buradan doğrularsın.
-    app_build: str = "81"
-    app_build_label: str = "A1: AI Trade artık Helius/Chainstack WS (logsSubscribe) üzerinden çalışır — PumpPortal'sız, SOL yakmadan"
+    app_build: str = "82"
+    app_build_label: str = "WS 'all' modu — Chainstack/standart node'larda logsSubscribe (mentions çalışmıyor); copy+AI firehose'dan client-side pump.fun filtresiyle beslenir"
     environment: Literal["development", "production", "test"] = "development"
     api_prefix: str = "/api"
     secret_key: str = Field(default="degistir-bu-anahtari", description="Uygulama imza anahtarı")
@@ -76,6 +76,12 @@ class Settings(BaseSettings):
         return v
     # Canlı dinleyici sağlayıcısı: "helius" (ücretsiz, SOL yakmaz) | "pumpportal"
     listener_provider: str = "auto"
+    # WS logsSubscribe modu. "mentions" (adres filtresi) yalnız Helius/Triton gibi
+    # index'li node'larda ÇALIŞIR; Chainstack vb. standart/shared node'lar mentions'ı
+    # KABUL edip hiç bildirim GÖNDERMEZ. "all" tüm logları alıp pump.fun'ı client-side
+    # filtreler (her node'da çalışır, daha çok bant genişliği). "auto": Helius anahtarı
+    # varsa mentions, yoksa all. Chainstack kullanıyorsan auto zaten "all" seçer.
+    ws_logs_mode: Literal["auto", "mentions", "all"] = "auto"
     # RPC hız limiti koruması: istekler arası asgari süre (sn) ve 429 tekrar sayısı.
     # Helius ücretsiz katman ~10 istek/sn; 0.12 ≈ 8 istek/sn güvenli.
     # NOT: Bu throttle yalnızca arka plan KEŞİF analizinde uygulanır; canlı alım
