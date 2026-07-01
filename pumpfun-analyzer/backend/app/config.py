@@ -8,7 +8,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     app_name: str = "Pump.fun Cüzdan Analizcisi"
     # SÜRÜM/BUILD numarası — her anlamlı güncellemede artar. Panelin üst barında
     # ve /health'te gösterilir; deploy'un doğru kodu aldığını buradan doğrularsın.
-    app_build: str = "79"
-    app_build_label: str = "trade akışı teşhisi — 'yeni token var ama trade yok' (funded PumpPortal anahtarı) net uyarısı"
+    app_build: str = "80"
+    app_build_label: str = "bozuk HELIUS_API_KEY (merged-line) otomatik yok sayılır → Chainstack/RPC yolu korunur"
     environment: Literal["development", "production", "test"] = "development"
     api_prefix: str = "/api"
     secret_key: str = Field(default="degistir-bu-anahtari", description="Uygulama imza anahtarı")
@@ -52,6 +52,28 @@ class Settings(BaseSettings):
     helius_api_key: str = ""
     helius_rpc_url: str = ""
     helius_ws_url: str = ""  # boşsa api-key'den üretilir
+
+    @field_validator("helius_api_key", mode="after")
+    @classmethod
+    def _sanitize_helius_key(cls, v: str) -> str:
+        """Bozuk/yanlış yapıştırılmış Helius anahtarını YOK SAY.
+
+        Yaygın .env hatası: iki satırın birleşmesi (örn.
+        `HELIUS_API_KEY=HELIUS_RPC_URL=https://...`) anahtara çöp bir değer atar.
+        Bu değer 'dolu' sayılınca kod Chainstack/RPC'yi yok sayıp bozuk Helius'a
+        gider. Anahtar '=', 'http' veya boşluk içeriyorsa geçersizdir → boş kabul
+        edip standart RPC (SOLANA_RPC_URL) yoluna güvenle döneriz."""
+        v = (v or "").strip()
+        if not v:
+            return ""
+        if "=" in v or "http" in v.lower() or " " in v or "\t" in v:
+            import logging
+            logging.getLogger(__name__).warning(
+                "HELIUS_API_KEY bozuk görünüyor (=/http/boşluk içeriyor); yok sayılıyor. "
+                ".env'de HELIUS_API_KEY ve HELIUS_RPC_URL AYRI satırlarda olmalı."
+            )
+            return ""
+        return v
     # Canlı dinleyici sağlayıcısı: "helius" (ücretsiz, SOL yakmaz) | "pumpportal"
     listener_provider: str = "auto"
     # RPC hız limiti koruması: istekler arası asgari süre (sn) ve 429 tekrar sayısı.
