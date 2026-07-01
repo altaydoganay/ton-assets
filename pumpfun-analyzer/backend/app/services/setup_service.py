@@ -23,6 +23,18 @@ def _trade_stream_status(db: Session) -> dict:
            .order_by(AuditLog.id.desc()).first())
     if row is None:
         return {"known": False, "ok": None, "watched": None, "trade_age": None}
+    # BAYATLIK: ai_scan yalnızca PumpPortal dinleyicisinden gelir. Helius/Chainstack
+    # dinleyicisine geçilince yeni ai_scan üretilmez → eski 'dead' kaydı yanlış
+    # kırmızı gösterir. Kayıt ~5 dk'dan eskiyse "bilinmiyor" say (rozet gösterme).
+    created = row.created_at
+    if created is not None and created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    try:
+        age = (datetime.now(timezone.utc) - created).total_seconds() if created else 0.0
+    except (TypeError, ValueError):
+        age = 0.0
+    if age > 300:
+        return {"known": False, "ok": None, "watched": None, "trade_age": None}
     ctx = row.context or {}
     dead = ctx.get("trade_stream") == "dead"
     return {

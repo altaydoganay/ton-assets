@@ -41,6 +41,20 @@ def test_healthy_trade_stream(db):
     assert chk["ok"] is True
 
 
+def test_stale_dead_scan_is_ignored(db):
+    """Eski (>5 dk) 'dead' ai_scan kaydı yanlış kırmızı göstermemeli (dinleyici değişti)."""
+    from datetime import datetime, timezone, timedelta
+    db.query(AuditLog).delete(); db.commit()
+    old = AuditLog(level="info", category="ai_scan", message="eski",
+                   context={"watched": 40, "trade_stream": "dead"})
+    db.add(old); db.commit()
+    old.created_at = datetime.now(timezone.utc) - timedelta(minutes=10)
+    db.commit()
+    ts = _trade_stream_status(db)
+    assert ts["known"] is False and ts["ok"] is None
+    assert setup_status(db)["trade_stream_ok"] is None
+
+
 def test_latest_scan_wins(db):
     db.query(AuditLog).delete(); db.commit()
     _scan(db, watched=10, trade_age_seconds=-1, trade_stream="dead")
