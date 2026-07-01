@@ -62,24 +62,30 @@ düşük riskli — akış davranışı değişmez, sadece izlenir.
 
 ---
 
+### BUILD 77 — Ana ekran acil kill-switch + HelpTooltip kapsama
+- **Global acil durdurma:** Emergency-stop artık Ayarlar'a gömülü değil; üst
+  bar'da (her ekranda) tek tıkla, iki-adım onaylı "Acil Dur" düğmesi. Aktifken
+  kırmızı uyarı banner'ı ve "Devam Et" ile geri açma. Backend'e atomik
+  `/trading/resume` endpoint'i eklendi (denetim kaydı ile).
+- **HelpTooltip:** settings/api'deki eşikler ve puan ağırlıklarına (`?`) açıklama
+  eklendi; ağırlık anahtarları için sözlük (copyability/performance/…). Not: risk
+  ayarları sayfası zaten her alanda `?` gösteriyordu (FieldInput bileşeni), AI/Copy
+  karar akışı ("neden aldı/almadı") build 73'te zaten mevcuttu — tekrar üretmedim.
+- Aktif Sağlayıcılar kartına canlı `data_status` / güvenilirlik satırı bağlandı.
+- UI sürüm rozeti 73 → 76/77 hizalandı.
+
 ## 2) Öneriler — EKLENECEKLER (öncelik sırasıyla)
 
-1. **HelpTooltip (`?`) tam kapsama.** `InfoTip` bileşeni var; kritik ayarların
-   (risk, live, api) tümüne henüz uygulanmadı. Kısa, düşük riskli UX işi. (Yüksek değer)
-2. **AI kararı açıklanabilirliği ("neden aldı / neden almadı").** `live_flow`
-   zaten her blok için audit log yazıyor; bunu `/logs`'ta yapılandırılmış bir
-   "DecisionCard" (sinyal → geçen/kalan kapılar → sonuç) olarak göstermek büyük
-   güven kazandırır. (Yüksek değer)
-3. **Emergency stop'u UI'a bağla.** Ayar (`emergency_stop`) ve motor kontrolü
-   zaten var; ana ekrana tek-tıkla "TÜM ALIMLARI DURDUR" düğmesi + onay dialog'u
-   (`ConfirmDialog` mevcut). (Yüksek değer, düşük risk)
-4. **Ek market sağlayıcı adapteri (Moralis veya Jupiter price).** Artık sağlık
+*(Not: eski liste (1) HelpTooltip ve (3) Emergency stop build 77'de yapıldı;
+(2) AI karar açıklaması build 73'te zaten vardı. Kalan öncelikler:)*
+
+1. **Ek market sağlayıcı adapteri (Moralis veya Jupiter price).** Artık sağlık
    omurgası hazır; ikinci bir market kaynağı DexScreener down olduğunda otomatik
    yedek olur (gerçek çok-sağlayıcılı dayanıklılık). (Orta değer)
-5. **Küme/ilişki filtresi görünürlüğü.** `wallet_relationships` + `insider`/
+2. **Küme/ilişki filtresi görünürlüğü.** `wallet_relationships` + `insider`/
    `rugger` sınıflandırıcıları backend'de var; leaderboard'da "küme riski"
    rozeti olarak yüzeye çıkarmak copyability kalitesini artırır. (Orta değer)
-6. **PWA/mobil manifest.** Telefon erişimi (Tailscale + same-origin proxy) çalışıyor;
+3. **PWA/mobil manifest.** Telefon erişimi (Tailscale + same-origin proxy) çalışıyor;
    `manifest.json` + service worker eklenerek "ana ekrana ekle" deneyimi. (Düşük öncelik)
 
 ## 3) Öneriler — ÇIKARILACAK / SADELEŞTİRİLECEK

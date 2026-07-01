@@ -161,6 +161,23 @@ def emergency_stop(close_positions: bool = False, db: Session = Depends(get_db))
             "detail": "Yeni işlemler durduruldu. Açık pozisyonlar otomatik kapatılmadı; manuel/panelden kapatılmalı."}
 
 
+@trading_router.post("/resume")
+def resume_trading(db: Session = Depends(get_db)):
+    """Acil durdurmayı kaldırır ve motoru yeniden açar (atomik + denetim kaydı).
+
+    Emergency-stop'un tersi: `emergency_stop=False`, `enabled=True`. Ana ekrandaki
+    kill-switch'in 'Devam Et' aksiyonu bunu çağırır."""
+    risk = settings_service.get_setting(db, "risk")
+    risk["emergency_stop"] = False
+    risk["enabled"] = True
+    settings_service.set_setting(db, "risk", risk)
+    db.add(AuditLog(level="info", category="trading",
+                    message="İşlem motoru yeniden açıldı (acil durdurma kaldırıldı)",
+                    context={}))
+    db.commit()
+    return {"ok": True, "enabled": True, "emergency_stop": False}
+
+
 @trading_router.get("/reset-status")
 def reset_status(scope: str = Query("ai", pattern="^(all|ai|copy)$"), db: Session = Depends(get_db)):
     """Ölçüm dönemi ve paper kayıt özetini döndürür.
