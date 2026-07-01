@@ -422,6 +422,20 @@ body {
   backdrop-filter: blur(22px); border-color: color-mix(in srgb, var(--border) 75%, transparent);
   box-shadow: 18px 0 60px -46px rgba(0,0,0,.42);
 }
+.ai-brain-orb {
+  width: 96px; height: 96px; border-radius: 999px; place-items: center;
+  background:
+    radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--mode-tone, var(--brand)) 90%, white), var(--mode-tone, var(--brand)) 55%, color-mix(in srgb, var(--mode-tone, var(--brand)) 40%, #000));
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--mode-tone, var(--brand)) 14%, transparent),
+              0 18px 50px -18px var(--mode-tone, var(--brand));
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ai-brain-orb { animation: orbPulse 3.2s ease-in-out infinite; }
+}
+@keyframes orbPulse {
+  0%,100% { transform: scale(1); box-shadow: 0 0 0 6px color-mix(in srgb, var(--mode-tone, var(--brand)) 14%, transparent), 0 18px 50px -18px var(--mode-tone, var(--brand)); }
+  50% { transform: scale(1.05); box-shadow: 0 0 0 12px color-mix(in srgb, var(--mode-tone, var(--brand)) 7%, transparent), 0 22px 60px -14px var(--mode-tone, var(--brand)); }
+}
 .premium-topbar {
   background: color-mix(in srgb, var(--card) 78%, transparent);
   backdrop-filter: blur(18px); border-color: color-mix(in srgb, var(--border) 70%, transparent);

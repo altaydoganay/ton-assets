@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     app_name: str = "Pump.fun Cüzdan Analizcisi"
     # SÜRÜM/BUILD numarası — her anlamlı güncellemede artar. Panelin üst barında
     # ve /health'te gösterilir; deploy'un doğru kodu aldığını buradan doğrularsın.
-    app_build: str = "87"
-    app_build_label: str = "portföy Chainstack fix (getTokenAccountsByOwner plan-limiti → public fallback) + AI karar akışı tokenleri tıklanabilir"
+    app_build: str = "88"
+    app_build_label: str = "Genel Bakış mockup düzenine göre yeniden kuruldu (Decision Studio hero + sparkline stat + avatarlı karar akışı + portföy/pozisyon/provider + risk gauge/copy özet/loglar)"
     environment: Literal["development", "production", "test"] = "development"
     api_prefix: str = "/api"
     secret_key: str = Field(default="degistir-bu-anahtari", description="Uygulama imza anahtarı")
