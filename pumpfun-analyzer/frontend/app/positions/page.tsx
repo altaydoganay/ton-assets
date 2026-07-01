@@ -136,11 +136,36 @@ export default function Positions() {
     finally { setBusy(""); }
   }
 
+  async function resetPaper() {
+    const ok = await confirm({
+      title: "Paper pozisyonları sıfırla?",
+      body: "TÜM paper alım/satım kayıtları ve açık paper pozisyonları silinir. Canlı işlemler ve gerçek cüzdanın ETKİLENMEZ. Temiz bir test dönemi başlatmak için idealdir.",
+      confirmText: "Paper'ı sıfırla", danger: true,
+    });
+    if (!ok) return;
+    setBusy("reset");
+    try {
+      await apiSend("/trading/reset-paper", "POST");
+      await Promise.all([mutate(), mutatePortfolio()]);
+      toast("success", "Paper sıfırlandı — açık paper pozisyonları temizlendi");
+    } catch (e: any) {
+      toast("error", e?.message || "Sıfırlanamadı");
+    } finally {
+      setBusy("");
+    }
+  }
+
   return (
     <div>
       {dialog}
       <PageHeader title="Açık Pozisyonlar" icon={<Wallet size={22} />}
-        subtitle="DB tahmini açık pozisyonlar + gerçek cüzdan snapshot'ı. Canlı PnL kesin fill değildir; gerçek cüzdan bakiyesi referanstır." />
+        subtitle="DB tahmini açık pozisyonlar + gerçek cüzdan snapshot'ı. Canlı PnL kesin fill değildir; gerçek cüzdan bakiyesi referanstır."
+        action={
+          <button className="btn-danger" disabled={!!busy} onClick={resetPaper}
+                  title="Tüm paper pozisyon/işlemleri temizle (canlı ve gerçek cüzdan etkilenmez)">
+            <RefreshCw size={14} /> Paper'ı Sıfırla
+          </button>
+        } />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Gerçekleşmemiş PnL" tone={totalUnreal >= 0 ? "var(--emerald)" : "var(--rose)"}

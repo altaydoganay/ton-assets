@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     app_name: str = "Pump.fun Cüzdan Analizcisi"
     # SÜRÜM/BUILD numarası — her anlamlı güncellemede artar. Panelin üst barında
     # ve /health'te gösterilir; deploy'un doğru kodu aldığını buradan doğrularsın.
-    app_build: str = "83"
-    app_build_label: str = "metod-bazlı RPC yönlendirme — Chainstack free getSignaturesForAddress'i (arşiv/403) reddedince o metod otomatik public RPC'ye düşer"
+    app_build: str = "84"
+    app_build_label: str = "UI hata düzeltmeleri — cüzdan menüsü z-index (arka ekran), açık pozisyonlarda Paper sıfırla butonu"
     environment: Literal["development", "production", "test"] = "development"
     api_prefix: str = "/api"
     secret_key: str = Field(default="degistir-bu-anahtari", description="Uygulama imza anahtarı")

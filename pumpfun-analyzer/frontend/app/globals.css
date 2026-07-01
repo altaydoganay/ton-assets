@@ -425,6 +425,10 @@ body {
 .premium-topbar {
   background: color-mix(in srgb, var(--card) 78%, transparent);
   backdrop-filter: blur(18px); border-color: color-mix(in srgb, var(--border) 70%, transparent);
+  /* backdrop-filter yeni bir stacking context yaratır; z-index olmadan header
+     ana içeriğin ALTINDA boyanır → cüzdan/portföy açılır menüsü "arka ekranda"
+     görünürdü. Header'ı içeriğin üstüne çıkar (overlay'lerin z-80+ altında). */
+  position: relative; z-index: 60;
 }
 .premium-main { scroll-behavior: smooth; }
 .status-strip {
