@@ -54,15 +54,30 @@ export function AiDecisionFlow({ strategy = "ai", limit = 7 }: { strategy?: "ai"
             const a = ACTION[d.action] || ACTION.info;
             const m = d.token ? meta[d.token] : undefined;
             return (
-              <div key={d.id} className="flex items-center gap-3 rounded-xl border px-2.5 py-2" style={{ borderColor: "var(--border)" }}>
-                <TokenAvatar mint={d.token || undefined} meta={m} size={34} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-semibold">{m?.symbol || m?.name || (d.token ? d.token.slice(0, 4) + "…" : "—")}</span>
-                    <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold ${a.cls}`}>{a.label}</span>
+              <div key={d.id} className="flex items-center gap-3 rounded-xl border px-2.5 py-2 transition hover:border-[color:var(--brand)]" style={{ borderColor: "var(--border)" }}>
+                {d.token ? (
+                  <Link href={`/tokens/${d.token}`} className="flex min-w-0 flex-1 items-center gap-3" title="Token detayına git">
+                    <TokenAvatar mint={d.token} meta={m} size={34} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm font-semibold hover:underline">{m?.symbol || m?.name || d.token.slice(0, 4) + "…"}</span>
+                        <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold ${a.cls}`}>{a.label}</span>
+                      </div>
+                      <div className="truncate text-[11px] muted">{d.reason}</div>
+                    </div>
+                  </Link>
+                ) : (
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    <TokenAvatar size={34} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm font-semibold">—</span>
+                        <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold ${a.cls}`}>{a.label}</span>
+                      </div>
+                      <div className="truncate text-[11px] muted">{d.reason}</div>
+                    </div>
                   </div>
-                  <div className="truncate text-[11px] muted">{d.reason}</div>
-                </div>
+                )}
                 {d.token_score != null && (
                   <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-bold"
                     style={{ color: scoreTone(d.token_score), border: `2px solid ${scoreTone(d.token_score)}` }}>

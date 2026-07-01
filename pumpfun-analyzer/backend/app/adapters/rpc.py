@@ -62,15 +62,22 @@ def _httpx_transport(timeout: float = 15.0) -> Transport:
 
 
 def _is_plan_limited(err: Any) -> bool:
-    """RPC error, sağlayıcı PLAN/ARŞİV limiti mi (endpoint sağlıklı ama bu metodu
-    vermiyor)? Örn. Chainstack: {'code': -32002, 'message': 'Archive, Debug and
-    Trace requests are not available on your current plan...'}."""
+    """Endpoint bu METODU desteklemiyor (plan limiti / arşiv / method-not-found)?
+    Bu durumda endpoint SAĞLIKSIZ sayılmaz; yalnız o metod için yedeğe düşülür.
+
+    Chainstack free örnekleri:
+      -32002 'Archive, Debug and Trace ... not available on your current plan'
+      -32602 'Method requires plan upgrade. See ...chainstack.com/docs/limits'  (getTokenAccountsByOwner)
+      -32601 'Method not found'  (getAssetsByOwner / DAS — bu node'da yok)
+    """
     if not isinstance(err, dict):
         return False
     if err.get("code") == -32002:
         return True
     msg = str(err.get("message") or "").lower()
-    return "current plan" in msg or "archive" in msg or "not available on your" in msg
+    keys = ("current plan", "plan upgrade", "requires plan", "requires a paid",
+            "archive", "not available on your", "chainstack.com/docs/limits", "method not found")
+    return any(k in msg for k in keys)
 
 
 class SolanaRpcAdapter(ChainProvider):
