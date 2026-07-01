@@ -69,6 +69,28 @@ def tracked_tokens(db: Session = Depends(get_db)):
     )
 
 
+@router.get("/meta")
+def tokens_meta(mints: str = Query("", description="virgülle ayrık mint listesi"),
+                db: Session = Depends(get_db)):
+    """Toplu token görsel/kimlik verisi (UI avatarları için). `/{mint}`'ten ÖNCE
+    tanımlı olmalı (yol çakışması)."""
+    wanted = [m.strip() for m in (mints or "").split(",") if m.strip()][:100]
+    if not wanted:
+        return {}
+    rows = db.query(Token).filter(Token.mint.in_(wanted)).all()
+    out: dict[str, dict] = {}
+    for t in rows:
+        mm = t.metrics or {}
+        out[t.mint] = {
+            "mint": t.mint,
+            "name": t.name or mm.get("name"),
+            "symbol": t.symbol or mm.get("symbol"),
+            "image_url": mm.get("image_url"),
+            "score": t.latest_score,
+        }
+    return out
+
+
 @router.get("/{mint}", response_model=TokenDetail)
 def get_token(mint: str, db: Session = Depends(get_db)):
     t = db.query(Token).filter(Token.mint == mint).first()

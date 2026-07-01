@@ -40,6 +40,12 @@ class TokenMetrics:
     stage: str = "unknown"             # bonding | graduating | graduated
     age_seconds: float = 0.0
 
+    # görsel/kimlik (piyasa verisinden — UI token avatarı/adı için)
+    name: str | None = None
+    symbol: str | None = None
+    image_url: str | None = None
+    pair_url: str | None = None
+
     # güvenlik
     mint_authority_active: bool = False
     freeze_authority_active: bool = False

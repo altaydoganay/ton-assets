@@ -104,6 +104,11 @@ def build_token_metrics(mint: str, chain: ChainProvider, market: MarketProvider)
     # --- Piyasa / likidite ---
     try:
         md = market.get_token_market(mint)
+        # görsel/kimlik: veri varsa (ok olmasa bile isim/resim gelebilir) yakala
+        m.name = md.name or m.name
+        m.symbol = md.symbol or m.symbol
+        m.image_url = md.image_url or m.image_url
+        m.pair_url = md.pair_url or m.pair_url
         if md.ok:
             m.price_sol = float(md.price_sol or 0.0)
             m.price_usd = float(md.price_usd or 0.0)
@@ -140,7 +145,15 @@ def analyze_token(db: Session, mint: str, chain: ChainProvider, market: MarketPr
 
     token = get_or_create_token(db, mint, stage=metrics.stage)
     token.stage = metrics.stage
+    if metrics.name:
+        token.name = metrics.name[:128]
+    if metrics.symbol:
+        token.symbol = metrics.symbol[:32]
     metrics_dict = {
+        "name": metrics.name,
+        "symbol": metrics.symbol,
+        "image_url": metrics.image_url,
+        "pair_url": metrics.pair_url,
         "liquidity_sol": metrics.liquidity_sol,
         "price_sol": metrics.price_sol,
         "price_usd": metrics.price_usd,

@@ -10,6 +10,7 @@ import {
   Coins, Trophy, Sparkles, Gauge, Activity, Wallet, Bell, Rocket,
 } from "lucide-react";
 import { PremiumBarChart, PremiumDonut, PremiumLineChart, SpotlightCard, TinyLine } from "@/components/PremiumUI";
+import { AiDecisionFlow } from "@/components/AiDecisionFlow";
 
 type Mode = "ai" | "copy";
 
@@ -180,10 +181,12 @@ export function OverviewDashboard() {
         <StatCard label="Takip Cüzdanı" value={fmtNum(ov?.wallets?.tracked || 0, 0)} hint={strategy === "ai" ? "AI modunda pasif" : "Copy modunda aktif"} icon={<Trophy size={18} />} tone="var(--emerald)" />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.2fr_.8fr]">
-        <PremiumLineChart data={perf?.curve || []} label="Paper Equity Curve" />
+      <div className="grid gap-4 xl:grid-cols-[1.1fr_.9fr]">
+        <AiDecisionFlow strategy={strategy} limit={7} />
         <ProviderHealthCard />
       </div>
+
+      <PremiumLineChart data={perf?.curve || []} label="Paper Equity Curve" />
 
       <div className="grid gap-4 xl:grid-cols-2">
         <PremiumDonut data={exitData} label="AI Exit Sebepleri" />
