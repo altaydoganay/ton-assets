@@ -65,6 +65,36 @@ def test_all_endpoints_fail_raises():
         adapter.get_signatures_for_address("addr")
 
 
+def test_plan_limited_method_routes_to_fallback_but_keeps_primary_for_others():
+    """Chainstack free: getSignaturesForAddress -32002 (arşiv) → yedek endpoint'e
+    METOD-BAZLI düşer; ama getTransaction birincilde kalır (endpoint sağlıksız sayılmaz)."""
+    calls = []
+
+    def transport(url, payload):
+        calls.append((url, payload["method"]))
+        if url == "https://chainstack" and payload["method"] == "getSignaturesForAddress":
+            return {"jsonrpc": "2.0", "id": 1, "error": {
+                "code": -32002,
+                "message": "Archive, Debug and Trace requests are not available on your current plan."}}
+        if payload["method"] == "getSignaturesForAddress":
+            return {"jsonrpc": "2.0", "id": 1, "result": ["sig1"]}
+        return {"jsonrpc": "2.0", "id": 1, "result": {"tx": "ok"}}
+
+    adapter = SolanaRpcAdapter(endpoints=["https://chainstack", "https://public"], transport=transport)
+
+    # getSignaturesForAddress → chainstack reddeder → public'e düşer
+    assert adapter.get_signatures_for_address("addr") == ["sig1"]
+    # getTransaction → chainstack HÂLÂ kullanılabilir (sağlıksız sayılmadı)
+    calls.clear()
+    assert adapter.get_transaction("sig1") == {"tx": "ok"}
+    assert calls[0][0] == "https://chainstack"  # birincil hâlâ tercih ediliyor
+
+    # ikinci getSignaturesForAddress çağrısı chainstack'i ATLAR (metod-bazlı hafıza)
+    calls.clear()
+    adapter.get_signatures_for_address("addr2")
+    assert all(url != "https://chainstack" for url, m in calls if m == "getSignaturesForAddress")
+
+
 def test_rpc_error_in_payload_triggers_failover():
     def transport(url, payload):
         if url == "https://a":

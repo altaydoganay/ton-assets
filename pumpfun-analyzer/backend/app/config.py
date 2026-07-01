@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     app_name: str = "Pump.fun Cüzdan Analizcisi"
     # SÜRÜM/BUILD numarası — her anlamlı güncellemede artar. Panelin üst barında
     # ve /health'te gösterilir; deploy'un doğru kodu aldığını buradan doğrularsın.
-    app_build: str = "82"
-    app_build_label: str = "WS 'all' modu — Chainstack/standart node'larda logsSubscribe (mentions çalışmıyor); copy+AI firehose'dan client-side pump.fun filtresiyle beslenir"
+    app_build: str = "83"
+    app_build_label: str = "metod-bazlı RPC yönlendirme — Chainstack free getSignaturesForAddress'i (arşiv/403) reddedince o metod otomatik public RPC'ye düşer"
     environment: Literal["development", "production", "test"] = "development"
     api_prefix: str = "/api"
     secret_key: str = Field(default="degistir-bu-anahtari", description="Uygulama imza anahtarı")
@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     market_provider: str = "dexscreener"
 
     solana_rpc_url: str = "https://api.mainnet-beta.solana.com"
+    # Yedek RPC: birincil sağlayıcı bir metodu plan/arşiv limitiyle (403 / -32002)
+    # reddederse (örn. Chainstack free 'getSignaturesForAddress' vermez) o metod bu
+    # endpoint'e METOD-BAZLI yönlendirilir. Birincil endpoint diğer metodlarda
+    # (getTransaction vb.) kullanılmaya devam eder. Public RPC bu metoda izin verir.
+    solana_rpc_fallback_url: str = "https://api.mainnet-beta.solana.com"
     solana_ws_url: str = "wss://api.mainnet-beta.solana.com"
     helius_api_key: str = ""
     helius_rpc_url: str = ""

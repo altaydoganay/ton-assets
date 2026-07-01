@@ -49,10 +49,28 @@ def _httpx_transport(timeout: float = 15.0) -> Transport:
                 raise RateLimitError("HTTP 429")
             if resp.status_code >= 500:
                 raise RpcError(f"HTTP {resp.status_code}")
-            resp.raise_for_status()
-            return resp.json()
+            # 403 vb. gövdesinde JSON-RPC error taşıyabilir (örn. Chainstack arşiv
+            # plan limiti: kod -32002). Bunu üst katmana JSON olarak bırakırız ki
+            # METOD-BAZLI ele alınabilsin (endpoint'i tümden sağlıksız saymadan).
+            try:
+                return resp.json()
+            except Exception:  # noqa: BLE001 — JSON değilse gerçek transport hatası
+                resp.raise_for_status()
+                raise RpcError(f"HTTP {resp.status_code} non-JSON")
 
     return _post
+
+
+def _is_plan_limited(err: Any) -> bool:
+    """RPC error, sağlayıcı PLAN/ARŞİV limiti mi (endpoint sağlıklı ama bu metodu
+    vermiyor)? Örn. Chainstack: {'code': -32002, 'message': 'Archive, Debug and
+    Trace requests are not available on your current plan...'}."""
+    if not isinstance(err, dict):
+        return False
+    if err.get("code") == -32002:
+        return True
+    msg = str(err.get("message") or "").lower()
+    return "current plan" in msg or "archive" in msg or "not available on your" in msg
 
 
 class SolanaRpcAdapter(ChainProvider):
@@ -77,6 +95,9 @@ class SolanaRpcAdapter(ChainProvider):
         self.rate_limit_retries = rate_limit_retries
         self._last_request = 0.0
         self._healthy: dict[str, bool] = {e: True for e in endpoints}
+        # (method -> bu metodu plan/arşiv limitiyle reddeden endpoint'ler). Bu
+        # endpoint'ler O METOD için atlanır ama diğer metodlarda kullanılmaya devam.
+        self._method_blocked: dict[str, set[str]] = {}
 
     def _throttle(self) -> None:
         if self.min_interval <= 0:
@@ -89,8 +110,10 @@ class SolanaRpcAdapter(ChainProvider):
     def _rpc(self, method: str, params: list[Any]) -> Any:
         payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
         last_err: Exception | None = None
-        # Sağlıklı endpoint'leri önce dene.
-        ordered = sorted(self.endpoints, key=lambda e: not self._healthy.get(e, True))
+        # Bu metodu plan limitiyle reddeden endpoint'leri ELE; sağlıklıyı öne al.
+        blocked = self._method_blocked.get(method, set())
+        usable = [e for e in self.endpoints if e not in blocked] or list(self.endpoints)
+        ordered = sorted(usable, key=lambda e: not self._healthy.get(e, True))
         for url in ordered:
             rl_attempts = 0
             while True:
@@ -98,7 +121,16 @@ class SolanaRpcAdapter(ChainProvider):
                 try:
                     data = self.transport(url, payload)
                     if isinstance(data, dict) and data.get("error"):
-                        raise RpcError(str(data["error"]))
+                        err = data["error"]
+                        # PLAN/ARŞİV limiti: endpoint sağlıklı ama bu metodu vermiyor
+                        # → metod-bazlı engelle, endpoint'i SAĞLIKSIZ SAYMA, sonrakine geç.
+                        if _is_plan_limited(err):
+                            self._method_blocked.setdefault(method, set()).add(url)
+                            last_err = RpcError(str(err))
+                            logger.warning("Endpoint '%s' metodu plan limitiyle reddetti (%s); "
+                                           "bu metod yedek endpoint'e yönlendiriliyor", url, method)
+                            break  # sonraki endpoint
+                        raise RpcError(str(err))
                     self._healthy[url] = True
                     return data.get("result") if isinstance(data, dict) else data
                 except RateLimitError as exc:

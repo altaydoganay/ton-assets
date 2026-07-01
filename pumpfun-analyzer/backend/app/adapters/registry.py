@@ -34,6 +34,11 @@ def build_chain_provider(throttle: bool = True) -> ChainProvider:
         return HealthTrackingChainProvider(inner)
     # Varsayılan: standart RPC (gerekirse Helius RPC'yi de failover olarak ekle)
     endpoints = [settings.solana_rpc_url]
+    # Yedek RPC: birincil (örn. Chainstack free) getSignaturesForAddress'i plan
+    # limitiyle reddederse o metod buraya METOD-BAZLI düşer. Public RPC izin verir.
+    fb = settings.solana_rpc_fallback_url
+    if fb and fb not in endpoints:
+        endpoints.append(fb)
     if settings.helius_rpc_url:
         # Anahtar yokken bile URL'de gömülü anahtar güncel HELIUS_API_KEY'e hizalanır
         from .helius import with_api_key

@@ -92,6 +92,17 @@ kontrollü, SOL harcanmaz.
 
 ---
 
+## 3.5) ⚠️ Chainstack FREE plan kısıtı: getSignaturesForAddress (arşiv/403)
+Chainstack free/global plan `getSignaturesForAddress`'i "Archive" sayıp **403 /
+-32002** ile reddeder (cüzdan/token geçmiş analizinde kullanılır). **Build 83 bunu
+otomatik çözer:** bu metod, plan limiti görülünce **metod-bazlı olarak yedek RPC'ye**
+(`SOLANA_RPC_FALLBACK_URL`, varsayılan public mainnet-beta) yönlendirilir; Chainstack
+diğer metodlarda (getTransaction, getAccountInfo, getTokenLargestAccounts…) kullanılmaya
+devam eder. Yani ekstra ayar gerekmez — public fallback varsayılan açık. İstersen
+`SOLANA_RPC_FALLBACK_URL`'i başka bir ücretsiz RPC yapabilirsin.
+
+Canlı doğrulandı: getSignaturesForAddress → public (200), getTransaction → Chainstack (200).
+
 ## 4) Ne %100 çalışır, ne iş gerektirir (dürüst tablo)
 
 | İş | Chainstack ile | Not |
