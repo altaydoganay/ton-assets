@@ -60,9 +60,13 @@ DEFAULT_ELIGIBILITY = {
     # AKTİF cüzdana öncelik: kopya-ticarette uyuyan (son N gün işlem yapmamış)
     # bir cüzdanı takip etmek anlamsızdır — yeni alımı gelmez. 7 gün = pump.fun
     # için makul "hâlâ aktif" penceresi (eski 14 çok gevşekti).
-    "max_days_since_last_trade": 3,
-    "copyability_min_sample": 12,
-    "copyability_require_min_sample": True,
+    "max_days_since_last_trade": 7,
+    "copyability_min_sample": 6,
+    # Copyability simüle EDİLEBİLDİĞİNDE (>= min_sample) sert kapı uygulanır; ama
+    # simüle edilemeyen (taze/az veri) cüzdanı otomatik REDDETMEK havuzu çökertir —
+    # bunun yerine lider bileşenlerine göre puanlanıp review işaretlenir. Bilinçli
+    # olarak canlıya alırken sıkılaştırmak istersen True yap.
+    "copyability_require_min_sample": False,
     "copyability_min_coverage": 0.70,
     "copyability_max_entry_jump_10s": 0.15,
     "copyability_min_pnl_10s": 0.001,
@@ -120,12 +124,20 @@ def score_wallet(
     threshold: float = 70.0,
 ) -> WalletScoreResult:
     w = {**DEFAULT_WEIGHTS, **(weights or {})}
+    copy_m = copyability_metrics or {}
+    # "Copyability var" = en az bir simüle edilebilir örneklem. sample=0 olan dolu
+    # sözlük de "veri yok" sayılır (aksi halde nötr yük skoru düşürür).
+    has_copy = bool(copy_m) and int(copy_m.get("copy_sample_size") or 0) > 0
+    if not has_copy:
+        # Copyability verisi yok (taze cüzdan / az örneklem / fiyat proxy'si eksik):
+        # ağırlığını düş ve kalan bileşenleri normalize et. Böylece simüle
+        # edilemeyen cüzdan %25'lik nötr(50) yükle skoru DÜŞMEZ; lider
+        # bileşenlerine göre puanlanır ve review olarak işaretlenir.
+        w = {k: v for k, v in w.items() if k != "copyability"}
     weight_total = sum(float(v) for v in w.values()) or 1.0
     w = {k: float(v) / weight_total for k, v in w.items()}
     elig = {**DEFAULT_ELIGIBILITY, **(eligibility or {})}
     breakdown: dict = {}
-
-    copy_m = copyability_metrics or {}
 
     # --- copyability (%25): 0.01 SOL gecikmeli kopya simülasyonu ---
     copyability = float(copy_m.get("copyability_score") if copy_m.get("copyability_score") is not None else 50.0)
@@ -238,7 +250,7 @@ def score_wallet(
     }
 
     raw_total = (
-        w["copyability"] * copyability
+        w.get("copyability", 0.0) * copyability
         + w["performance"] * performance
         + w["consistency"] * consistency
         + w["risk"] * risk
@@ -249,7 +261,7 @@ def score_wallet(
     )
 
     # Güvene göre nötr (50) değere doğru çek: az veri => temkinli puan.
-    if copy_m:
+    if has_copy:
         copy_confidence = min(1.0, c_cov) if c_sample >= 1 else 0.0
         if c_sample < int(elig.get("copyability_min_sample", 12)):
             copy_confidence *= 0.65

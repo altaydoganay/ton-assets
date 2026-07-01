@@ -173,9 +173,21 @@ def _market_index(swaps: Sequence[CopyabilitySwap]) -> dict[str, list[Copyabilit
     return by_mint
 
 
-def _first_price_at_or_after(rows: Sequence[CopyabilitySwap], ts: int) -> float | None:
+def _first_price_at_or_after(rows: Sequence[CopyabilitySwap], ts: int,
+                             before: int | None = None) -> float | None:
+    """`ts` (dahil) ve `before` (hariç) arasındaki İLK güvenilir fiyat.
+
+    `before` (genelde liderin satış zamanı) verilirse, follower girişini liderin
+    KENDİ satış tikinden ÖNCEYE zorlar. Aksi halde ara fiyat verisi olmayan bir
+    trade'de follower yanlışlıkla tepe (satış) fiyatından alıyormuş gibi hesaplanır;
+    bu da gerçek trade'i uydurma "chase/zarar" gösterir. Ara fiyat yoksa None döner
+    (not_simulatable) — kesin kâr/zarar varsaymayız."""
     for row in rows:
-        if row.block_time >= ts and row.price_sol > 0:
+        if row.block_time < ts:
+            continue
+        if before is not None and row.block_time >= before:
+            return None
+        if row.price_sol > 0:
             return row.price_sol
     return None
 
@@ -204,7 +216,8 @@ def _delay_stats(
     missing = 0
     for pos in positions:
         rows = market.get(pos.token_mint, [])
-        entry_price = _first_price_at_or_after(rows, pos.leader_buy_time + delay)
+        entry_price = _first_price_at_or_after(rows, pos.leader_buy_time + delay,
+                                               before=pos.leader_sell_time)
         exit_price = _first_price_at_or_after(rows, pos.leader_sell_time)
         if entry_price is None or exit_price is None or entry_price <= 0 or exit_price <= 0:
             missing += 1

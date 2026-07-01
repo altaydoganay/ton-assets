@@ -418,8 +418,9 @@ def leaderboard(limit: int = Query(300, le=1000), db: Session = Depends(get_db))
         ),
         reverse=True,
     )
+    lim = limit if isinstance(limit, int) else 300  # doğrudan çağrıda Query default'a karşı
     out = []
-    for w in rows[:limit]:
+    for w in rows[:lim]:
         m = w.metrics or {}
         out.append({
             "address": w.address, "label": w.label, "status": w.status,

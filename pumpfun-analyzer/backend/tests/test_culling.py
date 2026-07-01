@@ -6,10 +6,17 @@ from app.services.culling import cull_wallets
 from app.services.settings_service import get_setting, set_setting
 
 
-def _w(db, addr, *, score, pnl, pf, closed, div):
+def _w(db, addr, *, score, pnl, pf, closed, div,
+       copy_sample=8, copy_pnl_10=0.05, copy_score=70, copy_pf=1.8, copy_cov=0.8, entry_jump=0.05):
+    # Build 73 eleme copyability metriklerini de kullanır; varsayılanlar GEÇERLİ
+    # (iyi) kopyalanabilirlik verir — kopya-dışı senaryoları test eden çağrılar
+    # bu yüzden yanlışlıkla elenmez. Kötü cüzdanı test etmek için override edilir.
     w = Wallet(address=addr, status=WalletStatus.tracked.value, latest_score=score,
                risk_flags=[], metrics={"realized_pnl_sol": pnl, "profit_factor": pf,
-                                        "closed_positions": closed, "token_diversity": div})
+                                        "closed_positions": closed, "token_diversity": div,
+                                        "copy_sample_size": copy_sample, "copy_pnl_10s_sol": copy_pnl_10,
+                                        "copyability_score": copy_score, "copy_profit_factor_10s": copy_pf,
+                                        "copy_coverage_ratio": copy_cov, "avg_entry_jump_10s": entry_jump})
     db.add(w); db.commit()
     return w
 

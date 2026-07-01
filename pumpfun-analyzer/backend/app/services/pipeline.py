@@ -225,8 +225,8 @@ def analyze_wallet(
     weights = get_setting(db, "wallet_weights")
     eligibility = get_setting(db, "wallet_eligibility")
     eligibility.update({
-        "copyability_min_sample": int(risk_settings.get("copyability_min_sample", 12)),
-        "copyability_require_min_sample": bool(risk_settings.get("copyability_require_min_sample", True)),
+        "copyability_min_sample": int(risk_settings.get("copyability_min_sample", 6)),
+        "copyability_require_min_sample": bool(risk_settings.get("copyability_require_min_sample", False)),
         "copyability_min_coverage": float(risk_settings.get("copyability_min_coverage", 0.70)),
         "copyability_max_entry_jump_10s": float(risk_settings.get("copyability_max_entry_jump_10s", 0.15)),
         "copyability_min_pnl_10s": float(risk_settings.get("copyability_min_pnl_10s", 0.001)),

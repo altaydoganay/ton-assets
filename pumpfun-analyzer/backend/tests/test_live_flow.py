@@ -3,7 +3,7 @@ import pytest
 
 from app.adapters.base import ChainProvider, MarketProvider, TokenMarketData
 from app.adapters.pumpportal import PumpPortalTrade
-from app.models import Wallet, WalletStatus, PaperTrade, Alert
+from app.models import Wallet, WalletStatus, PaperTrade, LiveTrade, Alert
 from app.notifications.telegram import TelegramNotifier
 from app.services.live_flow import handle_trade_event, reset_engine
 from app.services.settings_service import set_setting
@@ -53,7 +53,12 @@ class FakeMarket(MarketProvider):
 
 
 def _make_tracked_wallet(db, addr="LeaderWallet1111111111111111111111111111111"):
-    w = Wallet(address=addr, status=WalletStatus.tracked.value, latest_score=85.0, risk_flags=[])
+    # Build 73: canlı kopya için lider cüzdanın DOĞRULANMIŞ copyability'si gerekir
+    # (örneklem >= 12, pozitif 10sn copy PnL, skor >= 65). Testlerdeki lider
+    # bunları karşılamalı ki canlı güvenlik kapısı signer yolunu engellemesin.
+    w = Wallet(address=addr, status=WalletStatus.tracked.value, latest_score=85.0, risk_flags=[],
+               metrics={"copy_sample_size": 20, "copy_pnl_10s_sol": 0.12, "copyability_score": 78,
+                        "copy_profit_factor_10s": 2.0, "copy_coverage_ratio": 0.9, "avg_entry_jump_10s": 0.05})
     db.add(w)
     db.commit()
     db.refresh(w)
@@ -67,9 +72,11 @@ def _trade(addr, mint="HealthyMint11111111111111111111111111111111", side="buy",
 
 
 @pytest.fixture(autouse=True)
-def _reset():
+def _reset(db):
+    db.query(PaperTrade).delete(); db.query(LiveTrade).delete(); db.commit()
     reset_engine()
     yield
+    db.query(PaperTrade).delete(); db.query(LiveTrade).delete(); db.commit()
     reset_engine()
 
 
@@ -85,6 +92,7 @@ def test_buy_creates_alert_and_paper_trade(db):
     set_setting(db, "risk", {"enabled": True, "mode": "paper", "fixed_sol_amount": 0.1,
                              "max_position_sol": 0.5, "min_liquidity_sol": 5,
                              "min_wallet_score": 70, "min_token_score": 70})
+    db.query(PaperTrade).delete(); db.query(LiveTrade).delete(); db.commit()
     reset_engine()
     res = handle_trade_event(db, _trade(w.address, sig="buyevt"), chain=FakeChain(), market=FakeMarket(),
                              notifier=TelegramNotifier())
@@ -135,7 +143,10 @@ def test_live_mode_uses_signer(db):
     w = _make_tracked_wallet(db, addr="Leader444444444444444444444444444444444444")
     set_setting(db, "risk", {"enabled": True, "mode": "live", "live_confirmed": True,
                              "fixed_sol_amount": 0.05, "max_position_sol": 0.5,
-                             "min_liquidity_sol": 5, "min_wallet_score": 70, "min_token_score": 70})
+                             "min_liquidity_sol": 5, "min_wallet_score": 70, "min_token_score": 70,
+                             "live_require_known_token_age": False, "live_min_token_age_seconds": 0,
+                             "live_max_token_age_minutes": 0})
+    db.query(PaperTrade).delete(); db.query(LiveTrade).delete(); db.commit()
     reset_engine()
 
     class FakeSigner:
@@ -151,7 +162,6 @@ def test_live_mode_uses_signer(db):
     assert res["action"] == "buy"
     assert res["traded"] is True
     assert len(signer.calls) == 1
-    from app.models import LiveTrade
     lt = db.query(LiveTrade).filter(LiveTrade.source_signature == "liveevt").first()
     assert lt is not None and lt.signature == "livesig1" and lt.status == "submitted"
 
@@ -162,7 +172,9 @@ def test_live_mode_mirrors_leader_sell(db):
                              "fixed_sol_amount": 0.01, "max_position_sol": 0.01,
                              "max_daily_spend_sol": 0.10, "max_daily_loss_sol": 0.03,
                              "min_liquidity_sol": 5, "min_wallet_score": 0, "min_token_score": 0,
-                             "max_open_positions_per_token": 1})
+                             "max_open_positions_per_token": 1,
+                             "live_require_known_token_age": False, "live_min_token_age_seconds": 0, "live_max_token_age_minutes": 0})
+    db.query(PaperTrade).delete(); db.query(LiveTrade).delete(); db.commit()
     reset_engine()
 
     class FakeSigner:
@@ -182,7 +194,6 @@ def test_live_mode_mirrors_leader_sell(db):
     assert sell["action"] == "mirror_sell"
     assert sell["traded"] is True
     assert len(signer.sells) == 1
-    from app.models import LiveTrade
     row = db.query(LiveTrade).filter(LiveTrade.source_signature == "livesell1", LiveTrade.side == "sell").first()
     assert row is not None and row.signature == "live-sell-sig" and row.status == "submitted"
 
@@ -205,6 +216,7 @@ def test_live_mode_blocks_fast_sniper_wallet(db):
                              "block_sniper_wallets_live": True,
                              "live_min_median_hold_seconds": 300,
                              "live_max_short_hold_ratio": 0.55})
+    db.query(PaperTrade).delete(); db.query(LiveTrade).delete(); db.commit()
     reset_engine()
 
     class FakeSigner:

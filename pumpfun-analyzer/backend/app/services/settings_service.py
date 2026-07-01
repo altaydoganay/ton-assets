@@ -83,8 +83,8 @@ DEFAULTS: dict[str, dict] = {
         "copyability_enabled": True,
         "copyability_delays_seconds": [5, 10, 30],
         "copyability_amount_sol": 0.01,
-        "copyability_min_sample": 12,
-        "copyability_require_min_sample": True,
+        "copyability_min_sample": 6,
+        "copyability_require_min_sample": False,
         "copyability_min_coverage": 0.70,
         "copyability_max_entry_jump_10s": 0.15,
         "copyability_min_pnl_10s": 0.001,
@@ -348,9 +348,9 @@ def seed_defaults(db: Session) -> None:
             "min_median_hold_seconds": 300,
             "max_short_hold_ratio": 0.55,
             "max_single_trade_pnl_share": 0.60,
-            "max_days_since_last_trade": 3,
+            "max_days_since_last_trade": 7,
             "copyability_min_sample": 6,
-            "copyability_require_min_sample": True,
+            "copyability_require_min_sample": False,
             "copyability_min_coverage": 0.55,
             "copyability_max_entry_jump_10s": 0.20,
             "copyability_min_pnl_10s": 0.001,
@@ -366,7 +366,7 @@ def seed_defaults(db: Session) -> None:
         set_setting(db, "thresholds", th)
         risk = get_setting(db, "risk")
         risk.update({
-            "copyability_require_min_sample": True,
+            "copyability_require_min_sample": False,
             "copyability_min_coverage": 0.55,
             "copyability_max_entry_jump_10s": 0.20,
             "copyability_min_pnl_10s": 0.001,
@@ -401,9 +401,9 @@ def seed_defaults(db: Session) -> None:
             "min_median_hold_seconds": 300,
             "max_short_hold_ratio": 0.45,
             "max_single_trade_pnl_share": 0.55,
-            "max_days_since_last_trade": 3,
-            "copyability_min_sample": 12,
-            "copyability_require_min_sample": True,
+            "max_days_since_last_trade": 7,
+            "copyability_min_sample": 6,
+            "copyability_require_min_sample": False,
             "copyability_min_coverage": 0.70,
             "copyability_max_entry_jump_10s": 0.15,
             "copyability_min_pnl_10s": 0.001,
@@ -421,8 +421,8 @@ def seed_defaults(db: Session) -> None:
 
         risk = get_setting(db, "risk")
         risk.update({
-            "copyability_min_sample": 12,
-            "copyability_require_min_sample": True,
+            "copyability_min_sample": 6,
+            "copyability_require_min_sample": False,
             "copyability_min_coverage": 0.70,
             "copyability_max_entry_jump_10s": 0.15,
             "copyability_min_pnl_10s": 0.001,

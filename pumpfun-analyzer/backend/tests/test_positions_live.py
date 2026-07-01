@@ -51,11 +51,11 @@ def test_open_position_value_capped_by_liquidity(db):
     # güncel: fiyat 5.25e-8 SOL, SOL=$150 => price_usd ~7.87e-6, likidite ~13 SOL
     rows = open_positions(db, market=FixedMarket(5.25e-8, price_usd=7.87e-6, liquidity_usd=2000.0))
     p = rows[0]
+    # Build 73: imkânsız/şüpheli pozisyonda uydurma değer GÖSTERİLMEZ (None) —
+    # likidite tavanıyla kırpmak yerine değeri gizler; bu daha güvenli/dürüsttür.
     assert p["suspicious"] is True
-    # ham değer ~126 SOL olurdu; likidite tavanıyla ~13 SOL'a sınırlanır (<< ham)
-    assert p["current_value_sol"] < 20
-    # likidite_sol = 2000 / (7.87e-6/5.25e-8) = 2000/149.9 ≈ 13.3
-    assert abs(p["current_value_sol"] - 13.34) < 0.5
+    assert p["current_value_sol"] is None
+    assert p["unrealized_pnl_sol"] is None
 
 
 def test_open_position_no_price_is_none(db):
