@@ -66,12 +66,62 @@ function ModeCard({ id, active, risk, mutate }: { id: Mode; active: boolean; ris
   );
 }
 
+function ProviderHealthCard() {
+  const { data: h } = useSWR<any>("/health", fetcher, { refreshInterval: 10000 });
+  const providers = h?.providers || [];
+  const meta: Record<string, string> = {
+    ok: "var(--emerald)", degraded: "var(--amber)", down: "var(--rose)", unknown: "var(--muted)",
+  };
+  const label: Record<string, string> = { ok: "Sağlıklı", degraded: "Kısıtlı", down: "Down", unknown: "—" };
+  return (
+    <div className="premium-chart-card">
+      <div className="mb-3 flex items-center justify-between">
+        <b className="flex items-center gap-2"><Gauge size={18} /> Veri Sağlayıcı Sağlığı</b>
+        <span className="rounded-full px-2 py-0.5 text-xs font-semibold"
+          style={{ color: meta[h?.data_status || "unknown"], background: `color-mix(in srgb, ${meta[h?.data_status || "unknown"]} 14%, transparent)` }}>
+          {label[h?.data_status || "unknown"]}
+        </span>
+      </div>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+          <span className="flex items-center gap-2"><Wallet size={14} /> Zincir · {h?.chain_provider ?? "—"}</span>
+          <span className="text-xs muted">RPC</span>
+        </div>
+        <div className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+          <span className="flex items-center gap-2"><Activity size={14} /> Piyasa · {h?.market_provider ?? "—"}</span>
+          {h?.market_data_reliable === false
+            ? <span className="text-xs text-red-500">güvenilmez</span>
+            : <span className="text-xs text-emerald-500">ok</span>}
+        </div>
+        {providers.slice(0, 4).map((p: any) => (
+          <div key={`${p.kind}:${p.name}`} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+            <span className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full" style={{ background: meta[p.status] || "var(--muted)" }} />
+              {p.name} <span className="text-[11px] muted">{p.kind === "market" ? "piyasa" : "zincir"}</span>
+            </span>
+            <span className="text-xs" style={{ color: meta[p.status] || "var(--muted)" }}>
+              {p.avg_latency_ms != null ? `${p.avg_latency_ms}ms` : label[p.status] || "—"}
+            </span>
+          </div>
+        ))}
+        {providers.length === 0 && (
+          <div className="rounded-lg border border-dashed px-3 py-3 text-center text-xs muted" style={{ borderColor: "var(--border)" }}>
+            Sağlayıcı çağrısı bekleniyor…
+          </div>
+        )}
+      </div>
+      <Link href="/health" className="btn mt-3 w-full justify-center text-xs">Tüm sistem sağlığı <ArrowRight size={13} /></Link>
+    </div>
+  );
+}
+
 export function OverviewDashboard() {
   const { data: ov } = useSWR<any>("/stats/overview", fetcher, { refreshInterval: 15000 });
   const { data: risk, mutate } = useSWR<any>("/settings/risk", fetcher, { refreshInterval: 12000 });
   const { data: perf } = useSWR<any>("/stats/performance", fetcher, { refreshInterval: 15000 });
   const { data: ts } = useSWR<any[]>("/stats/timeseries?days=14", fetcher, { refreshInterval: 30000 });
   const { data: ai } = useSWR<any>("/trading/ai-center?minutes=60&limit=40", fetcher, { refreshInterval: 8000 });
+  const { data: setup } = useSWR<any>("/setup", fetcher, { refreshInterval: 20000 });
   const strategy = ((risk?.value?.strategy_mode || "copy") as Mode);
   const mode = risk?.value?.mode || "paper";
   const activeCfg = MODES[strategy];
@@ -102,7 +152,7 @@ export function OverviewDashboard() {
               <span className="hchip"><FlaskConical size={14} /> İşlem modu: {mode}</span>
               <span className="hchip"><ShieldCheck size={14} /> Motor: {risk?.value?.enabled ? "açık" : "kapalı"}</span>
               <span className="hchip"><Zap size={14} /> Canlı onay: {risk?.value?.live_confirmed ? "var" : "yok"}</span>
-              <span className="hchip"><Bell size={14} /> UI 73</span>
+              <span className="hchip"><Bell size={14} /> BUILD {setup?.build ?? "—"}</span>
             </div>
           </div>
           <div className="hero-terminal">
@@ -132,13 +182,15 @@ export function OverviewDashboard() {
 
       <div className="grid gap-4 xl:grid-cols-[1.2fr_.8fr]">
         <PremiumLineChart data={perf?.curve || []} label="Paper Equity Curve" />
-        <div className="grid gap-4">
-          <PremiumDonut data={exitData} label="AI Exit Sebepleri" />
-          <div className="premium-chart-card text-[color:var(--brand)]">
-            <div className="mb-2 flex items-center justify-between"><b>Keşif ritmi</b><Activity size={18} /></div>
-            <TinyLine data={(ts || []).map((x) => ({ ...x, pnl: x.discovered }))} />
-            <div className="mt-2 text-xs muted">Son 14 gün keşfedilen cüzdan ritmi</div>
-          </div>
+        <ProviderHealthCard />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <PremiumDonut data={exitData} label="AI Exit Sebepleri" />
+        <div className="premium-chart-card text-[color:var(--brand)]">
+          <div className="mb-2 flex items-center justify-between"><b>Keşif ritmi</b><Activity size={18} /></div>
+          <TinyLine data={(ts || []).map((x) => ({ ...x, pnl: x.discovered }))} />
+          <div className="mt-2 text-xs muted">Son 14 gün keşfedilen cüzdan ritmi</div>
         </div>
       </div>
 
