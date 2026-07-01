@@ -155,6 +155,7 @@ def _risk_config(db: Session) -> RiskConfig:
         token_gate=str(r.get("token_gate", "safety")),
         max_open_positions_per_token=int(r.get("max_open_positions_per_token", 1)),
         max_follow_lag_seconds=int(r.get("max_follow_lag_seconds", 60)),
+        max_follow_lag_seconds_paper=int(r.get("max_follow_lag_seconds_paper", 300)),
         min_liquidity_sol=float(r.get("min_liquidity_sol", 5.0)),
         emergency_stop=bool(r.get("emergency_stop")),
         blocked_wallets=list(r.get("blocked_wallets", [])),

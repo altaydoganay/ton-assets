@@ -55,6 +55,10 @@ DEFAULTS: dict[str, dict] = {
         # kopya alım yapma (fiyat çoktan pompalanmış olabilir = tepeden alım riski).
         # Poll yolu liderin alımından bu yana geçen GERÇEK süreyi ölçer.
         "max_follow_lag_seconds": 30,
+        # PAPER/alerts modunda geç-giriş toleransı (görünürlük). Gerçek-zamanlı WS
+        # yoksa copy olayları RPC poll ile gecikmeli gelir; canlı sıkı limit paper
+        # testinde tüm copy'leri boğuyordu. Canlıda bu KULLANILMAZ (üstteki sıkı geçerli).
+        "max_follow_lag_seconds_paper": 300,
         "min_liquidity_sol": 5.0,  # yalnızca ölçülebildiğinde uygulanır
         "emergency_stop": False,
         "blocked_wallets": [],
@@ -556,6 +560,16 @@ def seed_defaults(db: Session) -> None:
         risk.setdefault("ai_risk_profile", "balanced")
         set_setting(db, "risk", risk)
         set_setting(db, "_meta_ai_fresh_universe_v21", {"applied": True})
+
+    # v22: PAPER copy görünürlüğü. Gerçek-zamanlı WS yoksa copy olayları RPC poll
+    # ile dakikalar gecikmeyle gelir; tek sıkı max_follow_lag_seconds (30sn) PAPER
+    # testinde TÜM copy'leri "gecikme aştı" ile boğuyordu. Moda duyarlı yeni alan:
+    # canlı sıkı kalır, paper cömert (300sn) olur ki test işlemleri GÖRÜNÜR.
+    if not db.query(Setting).filter(Setting.key == "_meta_paper_follow_lag_v22").first():
+        risk = get_setting(db, "risk")
+        risk.setdefault("max_follow_lag_seconds_paper", 300)
+        set_setting(db, "risk", risk)
+        set_setting(db, "_meta_paper_follow_lag_v22", {"applied": True})
 
 def get_strategy_mode(db: Session) -> str:
     """Aktif işlem motoru: copy veya ai. Hatalı/boş değerlerde copy'ye düşer."""

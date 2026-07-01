@@ -35,7 +35,13 @@ class RiskConfig:
     # VARSAYILAN "safety": taze token'ler adil puanlanamaz; asıl sinyal cüzdandır.
     token_gate: str = "safety"
     max_open_positions_per_token: int = 1
-    max_follow_lag_seconds: int = 60
+    # Geç-giriş (chasing) koruması. CANLI'da sıkı olmalı (gerçek parayla lideri
+    # geç takip = tepeden alım). Ama gerçek-zamanlı WS akışı yoksa (Helius/PumpPortal
+    # eksik) copy olayları RPC poll ile ~dakikalar gecikmeyle gelir; bu durumda 30sn
+    # sıkı limit PAPER testinde HİÇBİR copy'nin açılmamasına yol açar. Bu yüzden
+    # limit MODA duyarlıdır: paper/alerts_only için cömert, live için sıkı.
+    max_follow_lag_seconds: int = 60           # CANLI (sıkı)
+    max_follow_lag_seconds_paper: int = 300    # PAPER/alerts (cömert — görünürlük)
     min_liquidity_sol: float = 5.0
 
     emergency_stop: bool = False
@@ -131,8 +137,11 @@ def evaluate_buy(
     # limiti korur.
     if 0 < token_liquidity_sol < cfg.min_liquidity_sol:
         reasons.append("Likidite eşik altında")
-    if follow_lag_seconds > cfg.max_follow_lag_seconds:
-        reasons.append("İşlem gecikmesi izleme penceresini aştı")
+    # MODA duyarlı geç-giriş limiti: canlıda sıkı, paper/alerts'te cömert.
+    lag_limit = (cfg.max_follow_lag_seconds if cfg.mode == "live"
+                 else max(cfg.max_follow_lag_seconds, cfg.max_follow_lag_seconds_paper))
+    if follow_lag_seconds > lag_limit:
+        reasons.append(f"İşlem gecikmesi izleme penceresini aştı ({int(follow_lag_seconds)}sn > {int(lag_limit)}sn)")
 
     # Miktar hesapla — öncelik: elle override (forced) > PAPER sabit > orantılı/sabit
     if forced_amount is not None and forced_amount > 0:
