@@ -82,6 +82,13 @@ def test_logs_mention_pumpfun():
     assert logs_mention_pumpfun(None) is False
 
 
+def test_logs_is_pumpfun_create():
+    from app.workers.helius_listener import logs_is_pumpfun_create
+    assert logs_is_pumpfun_create([f"Program {PUMP_FUN_PROGRAM} invoke [1]", "Program log: Instruction: Create"]) is True
+    assert logs_is_pumpfun_create(["Program log: Instruction: Buy"]) is False
+    assert logs_is_pumpfun_create([]) is False
+
+
 def test_resolve_logs_mode(monkeypatch):
     from app import config as cfg
     import app.workers.helius_listener as hl

@@ -234,16 +234,26 @@ def _live_token_age_block(token: Token, risk: dict, now_ts: int) -> str | None:
     if not bool(risk.get("live_fresh_token_only", True)):
         return None
     metrics = token.metrics or {}
-    created = metrics.get("pair_created_at")
-    if created is None:
-        return "Canlı blok: token yaşı bilinmiyor" if bool(risk.get("live_require_known_token_age", False)) else None
+    # YAŞ KAYNAĞI (sağlam): taze pump.fun tokeni DexScreener'da olmadığından
+    # pair_created_at=0 gelir. 0'ı "epoch 1970" (=56 yıl) sanmak taze token'ı
+    # "çok eski" diye REDDETTİRİYORDU (AI'ın launch'ları kaçırmasının ana sebebi).
+    # Öncelik: geçerli pair_created_at → on-chain oluşturma → ilk görülme (first_seen).
+    created_ts: float | None = None
+    pair = metrics.get("pair_created_at")
     try:
-        created_ts = float(created)
+        pair_f = float(pair) if pair is not None else 0.0
     except (TypeError, ValueError):
-        return None
-    # DexScreener ms döner; bazı kaynaklar saniye dönebilir.
-    if created_ts > 10_000_000_000:
-        created_ts = created_ts / 1000.0
+        pair_f = 0.0
+    if pair_f > 0:
+        created_ts = pair_f / 1000.0 if pair_f > 10_000_000_000 else pair_f
+    elif getattr(token, "created_on_chain_at", None):
+        created_ts = token.created_on_chain_at.timestamp()
+    elif getattr(token, "first_seen", None):
+        created_ts = token.first_seen.timestamp()
+
+    if created_ts is None or created_ts <= 0:
+        # Yaş gerçekten bilinmiyor: varsayılan olarak ENGELLEME (fresh olabilir).
+        return "Canlı blok: token yaşı bilinmiyor" if bool(risk.get("live_require_known_token_age", False)) else None
     age_seconds = max(0.0, float(now_ts) - created_ts)
     min_age = float(risk.get("live_min_token_age_seconds", 0) or 0)
     max_age = float(risk.get("live_max_token_age_minutes", 360) or 0) * 60.0

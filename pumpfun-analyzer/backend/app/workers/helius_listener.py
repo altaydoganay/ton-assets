@@ -148,6 +148,22 @@ def logs_mention_pumpfun(logs) -> bool:
     return False
 
 
+def logs_is_pumpfun_create(logs) -> bool:
+    """Bu bildirim YENİ TOKEN oluşturma (pump.fun 'Create') mı?
+
+    Launch'ı en erken yakalamak kritik: create işlemleri trade'lerden çok daha
+    NADİRDİR, bu yüzden bunları rate-limit'i AŞARAK işleriz (launch'ları örnekleme
+    sınırına kurban etmeyiz). Create tx'i genelde dev'in ilk alımını da içerir →
+    AI token'ı t≈0'da değerlendirir. Bu, 'veri geç geliyor / token'ı 19 dk sonra
+    aldı' sorununun ana çözümüdür."""
+    if not logs:
+        return False
+    for line in logs:
+        if "Instruction: Create" in line:
+            return True
+    return False
+
+
 class _RateLimiter:
     """Dakikalık kayan pencere sayacı."""
     def __init__(self, per_min: int):
@@ -184,6 +200,7 @@ class HeliusListener:
         self.strategy_mode = "copy"
         self._ai_last_by_mint: dict[str, float] = {}
         self.stat_ai_signals = 0
+        self.stat_creates = 0   # yakalanan yeni-token (Create) sayısı ('all' modu)
         # WS logsSubscribe modu: 'mentions' (Helius) veya 'all' (Chainstack/standart).
         # 'all' modunda tek firehose aboneliği + client-side pump.fun filtresi ile
         # copy+AI+keşif beslenir (Chainstack mentions'ı desteklemediği için).
@@ -249,9 +266,9 @@ class HeliusListener:
             try:
                 await asyncio.to_thread(self._heartbeat)
                 # ASCII etiketli durum logu (Windows findstr ile aranabilir)
-                logger.info("[DISCOVERY] lookups=%d candidates=%d tracked_subs=%d ai_signals=%d mode=%s",
+                logger.info("[DISCOVERY] lookups=%d candidates=%d tracked_subs=%d ai_signals=%d creates=%d mode=%s",
                             self.stat_lookups, self.stat_candidates, len(self.subscribed_accounts),
-                            self.stat_ai_signals, self.strategy_mode)
+                            self.stat_ai_signals, self.stat_creates, self.strategy_mode)
                 # ANA KAPATMA: dinleyici kapalıysa TÜM abonelikleri durdur (kredi
                 # tasarrufu) ve abone OLMA — kopya işlem POLL ile sürer.
                 listener_on = await asyncio.to_thread(_listener_on)
@@ -335,8 +352,14 @@ class HeliusListener:
             # 'all' modu: ÖNCE ucuz log filtresi (pump.fun mı?), sonra rate-limited
             # getTransaction. Tüm Solana logları gelir; sadece pump.fun'ları işleriz.
             logs = value.get("logs") or []
-            if logs_mention_pumpfun(logs) and self.limiter.allow():
-                await asyncio.to_thread(self._handle_firehose, sig)
+            if logs_mention_pumpfun(logs):
+                # YENİ TOKEN (Create) rate-limit'i AŞAR → launch'ı geç yakalamayalım.
+                # Sıradan trade'ler örnekleme limitine tabidir (kredi koruması).
+                is_create = logs_is_pumpfun_create(logs)
+                if is_create:
+                    self.stat_creates += 1
+                if is_create or self.limiter.allow():
+                    await asyncio.to_thread(self._handle_firehose, sig)
 
     def _fetch_ntx(self, sig: str):
         raw = self.chain.get_transaction(sig)
