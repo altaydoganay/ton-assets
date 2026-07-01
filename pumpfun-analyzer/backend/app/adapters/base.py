@@ -28,6 +28,11 @@ class TokenMarketData:
     pair_created_at: int | None = None
     source: str = ""
     ok: bool = False
+    # SAĞLAYICI HATASI ile VERİ YOK ayrımı: `error` YALNIZCA gerçek taşıma/istek
+    # hatasında (timeout, 5xx, 429, bozuk yanıt) doldurulur. Taze token için "çift
+    # bulunamadı" durumu ok=False ama error=None'dır — sağlayıcı SAĞLIKLIDIR,
+    # sadece bu mint'in henüz piyasa verisi yoktur. provider_health bu ayrımı kullanır.
+    error: str | None = None
 
 
 class ChainProvider(ABC):

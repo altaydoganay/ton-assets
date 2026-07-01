@@ -51,7 +51,8 @@ class DexScreenerAdapter(MarketProvider):
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("DexScreener hata: %s", exc)
-            return TokenMarketData(mint=mint, source=self.name, ok=False)
+            # Gerçek taşıma hatası => sağlayıcı sağlığına 'fail' olarak yansısın.
+            return TokenMarketData(mint=mint, source=self.name, ok=False, error=repr(exc))
         finally:
             if self._client is None:
                 client.close()

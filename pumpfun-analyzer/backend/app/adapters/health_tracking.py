@@ -26,12 +26,14 @@ class HealthTrackingMarketProvider(MarketProvider):
             provider_health.record(self.name, "market", ok=False,
                                    latency_ms=(time.time() - t0) * 1000, error=repr(exc))
             raise
-        # "ok" = veri güvenilir döndü. ok=False (fiyat bulunamadı) sağlayıcı
-        # açısından da bir başarısızlıktır (bu mint için güvenilir veri yok).
-        ok = bool(getattr(data, "ok", False))
-        provider_health.record(self.name, "market", ok=ok,
-                               latency_ms=(time.time() - t0) * 1000,
-                               error=None if ok else f"no reliable market data for {mint[:8]}")
+        # SAĞLAYICI SAĞLIĞI, VERİ-YOK'tan ayrılır: gerçek taşıma hatası (data.error
+        # dolu) => fail. Taze token için "çift bulunamadı" (ok=False, error=None)
+        # sağlayıcının SAĞLIKLI yanıtıdır => ok. Aksi halde her fresh pump.fun
+        # token'i sağlayıcıyı yanlışlıkla 'down' gösterirdi.
+        err = getattr(data, "error", None)
+        healthy = err is None
+        provider_health.record(self.name, "market", ok=healthy,
+                               latency_ms=(time.time() - t0) * 1000, error=err)
         return data
 
 

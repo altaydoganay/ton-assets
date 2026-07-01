@@ -198,6 +198,36 @@ def test_live_mode_mirrors_leader_sell(db):
     assert row is not None and row.signature == "live-sell-sig" and row.status == "submitted"
 
 
+def test_live_buy_blocked_when_market_providers_down(db):
+    """Fail-safe: tüm piyasa sağlayıcılar 'down' iken canlı YENİ ALIM açılmaz."""
+    from app.services import provider_health
+    w = _make_tracked_wallet(db, addr="LeaderDataDown4444444444444444444444444444")
+    set_setting(db, "risk", {"enabled": True, "mode": "live", "live_confirmed": True,
+                             "fixed_sol_amount": 0.01, "max_position_sol": 0.01,
+                             "min_wallet_score": 0, "min_token_score": 0,
+                             "live_require_known_token_age": False, "live_min_token_age_seconds": 0,
+                             "live_max_token_age_minutes": 0})
+    db.query(PaperTrade).delete(); db.query(LiveTrade).delete(); db.commit()
+    reset_engine()
+    provider_health.reset()
+    for _ in range(6):  # bir market sağlayıcıyı 'down' yap (üst üste gerçek hata)
+        provider_health.record("dexscreener", "market", ok=False, error="HTTP 503")
+    assert provider_health.market_data_reliable() is False
+
+    class FakeSigner:
+        def submit_buy(self, *args, **kwargs):
+            raise AssertionError("veri down iken canlı alım yapılmamalı")
+
+    try:
+        res = handle_trade_event(db, _trade(w.address, sig="datadown1"),
+                                 chain=FakeChain(), market=FakeMarket(),
+                                 notifier=TelegramNotifier(), signer=FakeSigner())
+        assert res["action"] == "skipped"
+        assert "fail-safe" in res["reason"].lower()
+    finally:
+        provider_health.reset()
+
+
 def test_live_mode_blocks_fast_sniper_wallet(db):
     w = _make_tracked_wallet(db, addr="LeaderFastScalper444444444444444444444444")
     w.metrics = {

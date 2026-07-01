@@ -30,6 +30,7 @@ from ..models import AuditLog, LiveTrade, PaperTrade, Token, TokenStatus, Wallet
 from ..notifications.telegram import AlertContent, TelegramNotifier, short_addr
 from ..trading.engine import CopyTradeEngine, TradeContext, LiveTradingNotConfigured
 from ..trading.risk import RiskConfig
+from . import provider_health
 from .analysis_service import get_or_create_token
 from .pipeline import store_swap
 from .settings_service import get_setting, resolve_ai_policy
@@ -485,6 +486,24 @@ def handle_trade_event(
                 "signature": trade.signature, "reason": reason})
         return {"action": "skipped", "reason": reason,
                 "wallet": short_addr(trade.trader), "token": short_addr(trade.mint),
+                "side": trade.side, "wallet_score": wallet.latest_score,
+                "token_score": assessment.total}
+
+    # GLOBAL VERİ FAIL-SAFE: hiçbir piyasa sağlayıcı ayakta değilse (hepsi 'down'),
+    # fiyat/likidite bağımsız DOĞRULANAMAZ → canlı/AI YENİ ALIM açma. Satış/çıkış
+    # (mirror_sell) bu kapıdan geçmez, her zaman serbesttir. Kayıt yoksa (unknown)
+    # engelleme yapılmaz; mevcut per-trade fiyat kontrolleri zaten koruyor.
+    if (live_buy or is_ai_signal) and not provider_health.market_data_reliable():
+        reason = "Fail-safe: piyasa veri sağlayıcıları down — güvenilir fiyat yok, alım duraklatıldı"
+        src = "AI" if is_ai_signal else short_addr(trade.trader)
+        _audit(db, "warning",
+               f"Alım engellendi (veri fail-safe) — {src} → {short_addr(trade.mint)}: {reason}",
+               {"wallet": "AI" if is_ai_signal else trade.trader, "token": trade.mint,
+                "signature": trade.signature, "reason": reason,
+                "strategy": "ai" if is_ai_signal else "copy",
+                "data_status": provider_health.overall_status()})
+        return {"action": "skipped", "reason": reason,
+                "wallet": src, "token": short_addr(trade.mint),
                 "side": trade.side, "wallet_score": wallet.latest_score,
                 "token_score": assessment.total}
 
