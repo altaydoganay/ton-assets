@@ -94,20 +94,28 @@ ve copy yine çalışır (biraz gecikmeli).
 | Cüzdan keşfi (discovery) | ✅ %100 | RPC + WS logsSubscribe |
 | **COPY Trade (gerçek-zamanlı)** | ✅ %100 | WS logsSubscribe(mentions=cüzdan); PumpPortal/SOL yok |
 | Token güvenlik/likidite verisi | ✅ | Fiyat DexScreener'dan (ayrı, anahtarsız) |
-| **AI Trade (geniş yeni-token evreni)** | ⚠️ **kod işi gerekir** | Aşağıya bak |
+| **AI Trade (geniş yeni-token evreni)** | ✅ (build 81 / A1) | Aşağıya bak |
 
-### AI Trade neden ekstra iş istiyor?
-Bugün AI'ın "tüm yeni pump.fun tokenlerini tara" evreni **PumpPortal firehose'una**
-bağlı. `helius_listener` (Chainstack WS'i kullanan yol) copy + keşif yapar ama AI'ın
-geniş yeni-token akışını **AI motoruna route etmez**. Yani Chainstack'e geçince:
-- COPY tamamen çalışır.
-- AI, yalnızca **takip cüzdanlarının aldığı** tokenlerde tetiklenir (dar evren),
-  geniş firehose'da tetiklenmez.
+### AI Trade — A1 ile Chainstack üzerinde çalışır (build 81)
+Artık `helius_listener` AI modunda pump.fun firehose'unu (`logsSubscribe
+mentions=[PUMP_FUN_PROGRAM]`) **AI token-fırsat motoruna route eder** (`build_ai_trades`
+→ `handle_trade_event` is_ai_signal). Yani AI Trade, PumpPortal firehose'u OLMADAN,
+Chainstack/Helius WS üzerinden çalışır — **SOL yakmadan (RPC kredisi).**
 
-**Çözüm (yol haritası A1):** pump.fun program log akışını (`logsSubscribe
-mentions=[PUMP_FUN_PROGRAM]`) AI token-fırsat motoruna bağlamak. Bu yapılınca AI de
-Chainstack üzerinden, PumpPortal'sız, SOL yakmadan tam çalışır. Bu bir geliştirme
-işidir (tahmini yarım-1 gün, test + doğrulama dahil).
+Kurulum notları (AI'ı Chainstack WS'te çalıştırmak için):
+- `PUMPPORTAL_API_KEY=` **BOŞ** olmalı. (Doluysa `auto`/varsayılan seçim AI'da
+  PumpPortal'ı tercih eder — parse edilmiş, getTransaction'sız olduğu için ucuzdur.)
+- `LISTENER_PROVIDER=helius` (açık seçim AI modunda da RESPECT edilir; artık
+  PumpPortal'a zorlanmaz).
+- `SOLANA_WS_URL` = Chainstack WSS endpoint.
+- Keşif akışı (firehose) AI modunda otomatik açılır; AI değerlendirme hızı
+  `DISCOVERY_MAX_LOOKUPS_PER_MIN` ile sınırlıdır (RPC bütçesi). Chainstack'te bunu
+  yükseltebilirsin.
+
+Maliyet notu: PumpPortal parse edilmiş event verir (getTransaction gerekmez);
+logsSubscribe yolu her aday için `getTransaction` çeker → daha çok RPC kredisi. Bu
+yüzden AI değerlendirmesi dakikalık limitle korunur. Chainstack'in yüksek RPS'i bunu
+rahatça kaldırır; SOL harcanmaz.
 
 ---
 

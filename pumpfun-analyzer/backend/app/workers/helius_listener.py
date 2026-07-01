@@ -93,6 +93,39 @@ def _listener_on() -> bool:
         db.close()
 
 
+def _strategy_mode() -> str:
+    """Aktif motor: 'ai' veya 'copy' (DB risk ayarından)."""
+    db = SessionLocal()
+    try:
+        from ..services.settings_service import get_setting
+        risk = get_setting(db, "risk")
+        return "ai" if str(risk.get("strategy_mode", "copy") or "copy").lower() == "ai" else "copy"
+    except Exception:  # noqa: BLE001
+        return "copy"
+    finally:
+        db.close()
+
+
+def build_ai_trades(ntx) -> list[PumpPortalTrade]:
+    """A1: keşif firehose'undaki bir işlemden AI sinyali olacak TAZE token ALIMLARINI
+    çıkar. AI modunda lider aranmaz; her buy bir token-fırsatıdır. handle_trade_event'in
+    is_ai_signal yolu tokeni değerlendirir (yaş/skor/fiyat/fail-safe kapıları orada).
+
+    Böylece AI Trade, PumpPortal firehose'u OLMADAN, Helius/Chainstack WS
+    (logsSubscribe) üzerinden çalışır — SOL yakmadan (RPC kredisi)."""
+    out: list[PumpPortalTrade] = []
+    for wallet, mint in extract_buyers(ntx):
+        swap = detect_swap(ntx, wallet)
+        if swap is None or swap.side != "buy":
+            continue
+        out.append(PumpPortalTrade(
+            signature=swap.signature, trader=wallet, mint=mint, side="buy",
+            sol_amount=swap.sol_amount, token_amount=swap.token_amount,
+            pool=swap.venue, market_cap_sol=None, raw={"_strategy": "ai", "_source": "helius-ws"},
+        ))
+    return out
+
+
 class _RateLimiter:
     """Dakikalık kayan pencere sayacı."""
     def __init__(self, per_min: int):
@@ -124,6 +157,11 @@ class HeliusListener:
         self.known_candidates: set[str] = set()
         self.limiter = _RateLimiter(settings.discovery_max_lookups_per_min)
         self._req_id = 1000
+        # A1: AI modu durumu + token başına cooldown (aynı tokeni her trade'de tekrar
+        # değerlendirip boşa RPC/CPU harcamamak için). strategy_mode _refresh'te tazelenir.
+        self.strategy_mode = "copy"
+        self._ai_last_by_mint: dict[str, float] = {}
+        self.stat_ai_signals = 0
 
     def _next_id(self) -> int:
         self._req_id += 1
@@ -165,8 +203,9 @@ class HeliusListener:
             try:
                 await asyncio.to_thread(self._heartbeat)
                 # ASCII etiketli durum logu (Windows findstr ile aranabilir)
-                logger.info("[DISCOVERY] lookups=%d candidates=%d tracked_subs=%d",
-                            self.stat_lookups, self.stat_candidates, len(self.subscribed_accounts))
+                logger.info("[DISCOVERY] lookups=%d candidates=%d tracked_subs=%d ai_signals=%d mode=%s",
+                            self.stat_lookups, self.stat_candidates, len(self.subscribed_accounts),
+                            self.stat_ai_signals, self.strategy_mode)
                 # ANA KAPATMA: dinleyici kapalıysa TÜM abonelikleri durdur (kredi
                 # tasarrufu) ve abone OLMA — kopya işlem POLL ile sürer.
                 listener_on = await asyncio.to_thread(_listener_on)
@@ -179,7 +218,9 @@ class HeliusListener:
                     await asyncio.sleep(REFRESH_SECONDS)
                     continue
                 listener_was_on = True
-                want_discovery = await asyncio.to_thread(_discovery_on)
+                # A1: AI modunda firehose ZORUNLU (AI token-fırsat evreni oradan gelir).
+                self.strategy_mode = await asyncio.to_thread(_strategy_mode)
+                want_discovery = (await asyncio.to_thread(_discovery_on)) or self.strategy_mode == "ai"
                 if want_discovery and not self.discovery_sub_active:
                     await self._subscribe_logs(ws, PUMP_FUN_PROGRAM, "discovery", None)
                     self.discovery_sub_active = True
@@ -261,6 +302,21 @@ class HeliusListener:
         finally:
             db.close()
 
+    def _ai_cooldown_ok(self, mint: str) -> bool:
+        """Aynı tokeni cooldown içinde tekrar AI'a yollama (RPC/CPU koruması)."""
+        cooldown = float(settings.ai_signal_token_cooldown_seconds or 0)
+        if cooldown <= 0:
+            return True
+        now = time.monotonic()
+        last = self._ai_last_by_mint.get(mint, 0.0)
+        if now - last < cooldown:
+            return False
+        self._ai_last_by_mint[mint] = now
+        if len(self._ai_last_by_mint) > 20000:  # bellek koruması
+            cutoff = now - max(60.0, cooldown * 20)
+            self._ai_last_by_mint = {k: v for k, v in self._ai_last_by_mint.items() if v >= cutoff}
+        return True
+
     def _handle_discovery(self, sig: str):
         self.stat_lookups += 1
         try:
@@ -269,8 +325,32 @@ class HeliusListener:
                 return
             for wallet, mint in extract_buyers(ntx):
                 self._record_buyer(wallet, mint)
+            # A1: AI modunda aynı firehose'daki taze token alımlarını AI motoruna da
+            # yönlendir (PumpPortal'sız AI). Keşif kaydı yukarıda korunur.
+            if self.strategy_mode == "ai":
+                self._route_ai_signals(ntx)
         except Exception as exc:  # noqa: BLE001
             logger.warning("[DISCOVERY] olay atlandı: %s", exc)
+
+    def _route_ai_signals(self, ntx):
+        trades = build_ai_trades(ntx)
+        if not trades:
+            return
+        db = SessionLocal()
+        try:
+            for trade in trades:
+                if not self._ai_cooldown_ok(trade.mint):
+                    continue
+                try:
+                    res = handle_trade_event(db, trade, chain=self.chain,
+                                             notifier=self.notifier, signer=self.signer)
+                    self.stat_ai_signals += 1
+                    if res.get("action") == "buy" and res.get("traded"):
+                        logger.info("[AI-WS] alım açıldı %s", trade.mint[:8])
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("[AI-WS] sinyal işlenemedi %s: %s", trade.mint[:8], exc)
+        finally:
+            db.close()
 
     def _record_buyer(self, trader: str, mint: str):
         if trader in self.known_candidates:

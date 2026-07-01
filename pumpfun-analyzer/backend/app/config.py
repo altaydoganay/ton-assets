@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     app_name: str = "Pump.fun Cüzdan Analizcisi"
     # SÜRÜM/BUILD numarası — her anlamlı güncellemede artar. Panelin üst barında
     # ve /health'te gösterilir; deploy'un doğru kodu aldığını buradan doğrularsın.
-    app_build: str = "80"
-    app_build_label: str = "bozuk HELIUS_API_KEY (merged-line) otomatik yok sayılır → Chainstack/RPC yolu korunur"
+    app_build: str = "81"
+    app_build_label: str = "A1: AI Trade artık Helius/Chainstack WS (logsSubscribe) üzerinden çalışır — PumpPortal'sız, SOL yakmadan"
     environment: Literal["development", "production", "test"] = "development"
     api_prefix: str = "/api"
     secret_key: str = Field(default="degistir-bu-anahtari", description="Uygulama imza anahtarı")

@@ -36,13 +36,13 @@ def _choose_provider() -> str:
     provider = (settings.listener_provider or "auto").lower()
     mode = _current_strategy_mode()
     if provider == "auto":
+        # AI'da PumpPortal (parse edilmiş, getTransaction'sız) daha ucuz/hızlıdır;
+        # anahtar varsa onu seç. Anahtar yoksa Helius/RPC WS (A1 ile AI destekli).
         return "pumpportal" if settings.pumpportal_api_key else "helius"
-    # AI Trade'in hızlı token yakalaması PumpPortal new-token/trade akışıyla yapılır.
-    # Helius firehose, transaction parse + rate limit yüzünden AI fırsat motorunda
-    # gecikme yaratır. Kullanıcı AI modunda başlattıysa güvenli şekilde PumpPortal'a al.
-    if mode == "ai" and provider == "helius" and settings.pumpportal_api_key:
-        logger.warning("AI modu aktif: LISTENER_PROVIDER=helius olsa da hızlı token akışı için PumpPortal kullanılıyor")
-        return "pumpportal"
+    # NOT: Artık Helius/RPC WS dinleyicisi de AI sinyali üretir (A1: firehose →
+    # AI motoru). Bu yüzden kullanıcı LISTENER_PROVIDER'ı AÇIKÇA seçtiyse ona SAYGI
+    # gösteririz — AI modunda bile PumpPortal'a zorlamayız. (auto isteyen üstte
+    # PumpPortal'ı zaten alır.) Böylece "Helius/Chainstack ile SOL yakmadan AI" mümkün.
     return provider
 
 

@@ -34,7 +34,8 @@ trailing ile çıkar. Aşağısı bunu "sniper AI" seviyesine çıkarır.
 ### A) Sinyal & Fırsat Evreni
 | # | Madde | Durum | Efor·Risk |
 |---|-------|-------|-----------|
-| A1 | Yeni-token (create) olayına **doğrudan** tepki — en erken giriş penceresi | 🔧 (trade event'e bakıyor) | M · orta |
+| **A1** | **AI'ı Helius/Chainstack WS'e taşı** — pump.fun firehose (`logsSubscribe`) → AI motoru; PumpPortal'sız, SOL yakmadan | ✅ **build 81** | — |
+| A1b | Yeni-token (create) olayına **doğrudan** tepki — en erken giriş penceresi | 🔧 (şimdi buy event'ine bakıyor) | M · orta |
 | A2 | **Migration yakınlığı sinyali** — bonding curve % (pump → pumpswap geçişine ne kadar yakın). Pump.fun'da en güçlü 100x sinyallerinden | 🆕 | M · orta |
 | A3 | **"Akıllı para" kesişimi** — bu tokeni bizim KÂRLI takip cüzdanlarımızdan alan var mı? AI + Copy zekâsını birleştirir (en yüksek değerli madde) | 🆕 | M · orta |
 | A4 | Watchlist: migration'a tırmanan tokenleri izleyip eşik geçince tetikle | 🆕 | L · orta |
