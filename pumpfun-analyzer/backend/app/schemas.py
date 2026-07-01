@@ -149,3 +149,8 @@ class HealthOut(BaseModel):
     trading_mode: str
     telegram_enabled: bool
     version: str
+    # Veri sağlayıcı sağlığı (process ömürlü gözlem): panel "hangi sağlayıcı
+    # ayakta/düşük/down" ve "fiyat verisi güvenilir mi" bilgisini buradan alır.
+    data_status: str = "unknown"          # ok | degraded | down | unknown
+    market_data_reliable: bool = True
+    providers: list[dict] = []

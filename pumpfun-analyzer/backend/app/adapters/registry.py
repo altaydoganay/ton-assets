@@ -9,13 +9,17 @@ from ..config import settings
 from .base import ChainProvider, MarketProvider
 from .birdeye import BirdeyeAdapter
 from .dexscreener import DexScreenerAdapter
+from .health_tracking import HealthTrackingChainProvider, HealthTrackingMarketProvider
 from .helius import HeliusAdapter
 from .rpc import SolanaRpcAdapter
 
 
 def build_chain_provider(throttle: bool = True) -> ChainProvider:
     """Zincir sağlayıcı. `throttle=False` (canlı alım yolu) hız limiti beklemesi
-    uygulamaz — düşük gecikme için. Arka plan keşfinde `throttle=True` kalır."""
+    uygulamaz — düşük gecikme için. Arka plan keşfinde `throttle=True` kalır.
+
+    Dönen sağlayıcı sağlık-takipli sarmalayıcı ile sarılır (davranış aynı, her
+    çağrı `provider_health`'e kaydedilir)."""
     mi = settings.rpc_min_interval_seconds if throttle else 0.0
     rr = settings.rpc_rate_limit_retries
     # HELIUS_API_KEY tanımlıysa DAİMA Helius kullan — Enhanced Transactions
@@ -23,10 +27,11 @@ def build_chain_provider(throttle: bool = True) -> ChainProvider:
     # .env'de CHAIN_PROVIDER=rpc kalmış olsa bile bu ayar tuzağına düşmeyiz;
     # anahtar = niyet. (Anahtar YOKSA otomatik standart RPC'ye düşülür.)
     if settings.helius_api_key:
-        return HeliusAdapter(
+        inner: ChainProvider = HeliusAdapter(
             api_key=settings.helius_api_key, rpc_url=settings.helius_rpc_url or None,
             min_interval=mi, rate_limit_retries=rr,
         )
+        return HealthTrackingChainProvider(inner)
     # Varsayılan: standart RPC (gerekirse Helius RPC'yi de failover olarak ekle)
     endpoints = [settings.solana_rpc_url]
     if settings.helius_rpc_url:
@@ -34,11 +39,13 @@ def build_chain_provider(throttle: bool = True) -> ChainProvider:
         from .helius import with_api_key
         endpoints.append(with_api_key(settings.helius_rpc_url, settings.helius_api_key)
                          if settings.helius_api_key else settings.helius_rpc_url)
-    return SolanaRpcAdapter(endpoints=endpoints, min_interval=mi, rate_limit_retries=rr)
+    return HealthTrackingChainProvider(
+        SolanaRpcAdapter(endpoints=endpoints, min_interval=mi, rate_limit_retries=rr)
+    )
 
 
 def build_market_provider() -> MarketProvider:
     provider = settings.market_provider.lower()
     if provider == "birdeye" and settings.birdeye_api_key:
-        return BirdeyeAdapter()
-    return DexScreenerAdapter()
+        return HealthTrackingMarketProvider(BirdeyeAdapter())
+    return HealthTrackingMarketProvider(DexScreenerAdapter())

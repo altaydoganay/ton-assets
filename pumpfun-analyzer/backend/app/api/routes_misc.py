@@ -610,8 +610,21 @@ def health(db: Session = Depends(get_db)):
     except Exception:
         redis_ok = False
 
+    from ..services import provider_health
+    providers = provider_health.snapshot()
+    data_status = provider_health.overall_status()
+    reliable = provider_health.market_data_reliable()
+
+    # Genel durum: DB down ise 'degraded'; veri sağlayıcılar down ise de kullanıcı
+    # bunu üst düzeyde görmeli (kötü veriyle işlem yapmama felsefesi).
+    status = "ok"
+    if not db_ok:
+        status = "degraded"
+    elif data_status == "down":
+        status = "degraded"
+
     return HealthOut(
-        status="ok" if db_ok else "degraded",
+        status=status,
         database=db_ok,
         redis=redis_ok,
         chain_provider=settings.chain_provider,
@@ -619,4 +632,19 @@ def health(db: Session = Depends(get_db)):
         trading_mode=settings.trading_mode,
         telegram_enabled=settings.telegram_enabled,
         version=VERSION,
+        data_status=data_status,
+        market_data_reliable=reliable,
+        providers=providers,
     )
+
+
+@health_router.get("/providers")
+def providers_health():
+    """Veri sağlayıcı sağlık dökümü (market + chain), panelde ayrı kart olarak
+    gösterilir. Process ömürlü in-process kayıttan gelir."""
+    from ..services import provider_health
+    return {
+        "data_status": provider_health.overall_status(),
+        "market_data_reliable": provider_health.market_data_reliable(),
+        "providers": provider_health.snapshot(),
+    }
