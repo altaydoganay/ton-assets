@@ -44,8 +44,12 @@ def setup_status(db: Session) -> dict:
         },
         {
             "key": "provider", "label": "Dinleyici sağlayıcısı",
-            "ok": settings.listener_provider == "helius",
-            "detail": settings.listener_provider + (" (ücretsiz)" if settings.listener_provider == "helius" else " (SOL ücreti!)"),
+            "ok": settings.listener_provider in ("auto", "pumpportal", "helius"),
+            "detail": (
+                "auto → PumpPortal hızlı token akışı" if settings.listener_provider == "auto" and settings.pumpportal_api_key
+                else "PumpPortal hızlı token akışı" if settings.listener_provider == "pumpportal"
+                else "Helius logsSubscribe"
+            ),
         },
         {
             "key": "telegram", "label": "Telegram bildirimleri",
@@ -80,4 +84,10 @@ def setup_status(db: Session) -> dict:
         "discovery_enabled": get_runtime_flag(db, "discovery_enabled", settings.discovery_enabled),
         "discovery_max_lookups_per_min": settings.discovery_max_lookups_per_min,
         "listener_enabled": get_runtime_flag(db, "listener_enabled", settings.live_listener_enabled),
+        "listener_provider": settings.listener_provider,
+        "ai_signal_workers": settings.ai_signal_workers,
+        "ai_signal_queue_size": settings.ai_signal_queue_size,
+        "ai_signal_token_cooldown_seconds": settings.ai_signal_token_cooldown_seconds,
+        "ai_signal_drop_if_older_seconds": settings.ai_signal_drop_if_older_seconds,
+        "discovery_max_watched_tokens": settings.discovery_max_watched_tokens,
     }

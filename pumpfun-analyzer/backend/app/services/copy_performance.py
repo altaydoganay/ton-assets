@@ -72,7 +72,11 @@ def tracked_copy_stats(db: Session, include_blocked: bool = False) -> list[dict]
         st["status"] = w.status
         st["score"] = w.latest_score
         st["label"] = w.label
-        st["avg_buy_size_sol"] = (w.metrics or {}).get("avg_buy_size_sol")
+        metrics = w.metrics or {}
+        st["avg_buy_size_sol"] = metrics.get("avg_buy_size_sol")
+        st["copyability_score"] = metrics.get("copyability_score")
+        st["pretrade_copy_pnl_10s"] = metrics.get("copy_pnl_10s_sol")
+        st["copy_sample_size"] = metrics.get("copy_sample_size")
         st["copy_override_sol"] = overrides.get(w.address)
         rows.append(st)
     rows.sort(key=lambda r: r["total_pnl_sol"], reverse=True)

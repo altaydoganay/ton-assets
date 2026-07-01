@@ -45,6 +45,7 @@ class TradeContext:
     leader_sol_amount: float | None = None
     source_signature: str | None = None
     forced_sol_amount: float | None = None  # cüzdan-bazlı elle override / paper sabiti
+    strategy: str = "copy"                  # copy | ai
 
 
 class CopyTradeEngine:
@@ -67,7 +68,8 @@ class CopyTradeEngine:
              doldurulur — yoksa restart günlük zarar limitini (devre kesici)
              sıfırlayıp koruma penceresini açık bırakırdı.
 
-        Yalnızca PAPER trades üzerinden kurar (canlı pozisyonlar ayrı yönetilir).
+        Paper ve live trade kayıtlarından kurar; canlı modda da restart sonrası
+        token başına açık pozisyon limiti korunur.
         """
         from datetime import datetime, timezone
 
@@ -108,11 +110,33 @@ class CopyTradeEngine:
                 open_positions[mint] = 1
                 recovered += 1
 
+        live_rows = (
+            db.query(LiveTrade)
+            .filter(LiveTrade.status != "failed")
+            .order_by(LiveTrade.created_at.asc())
+            .all()
+        )
+        live_agg: dict[str, float] = {}
+        for r in live_rows:
+            delta = float(r.token_amount or 0.0)
+            if r.side == "buy":
+                live_agg[r.token_mint] = live_agg.get(r.token_mint, 0.0) + delta
+                if _is_today(getattr(r, "created_at", None)):
+                    spent_today += float(r.sol_amount or 0.0)
+            elif r.side == "sell":
+                live_agg[r.token_mint] = live_agg.get(r.token_mint, 0.0) - delta
+                if _is_today(getattr(r, "created_at", None)) and (r.realized_pnl_sol or 0.0) < 0:
+                    loss_today += abs(r.realized_pnl_sol or 0.0)
+        for mint, qty in live_agg.items():
+            if qty > 1e-9:
+                open_positions[mint] = max(open_positions.get(mint, 0), 1)
+
         self.day.date = today
         self.day.spent_sol = round(spent_today, 9)
         self.day.loss_sol = round(loss_today, 9)
         self.day.open_positions = open_positions
-        return {"recovered_positions": recovered, "spent_today": self.day.spent_sol,
+        return {"recovered_positions": recovered + sum(1 for q in live_agg.values() if q > 1e-9),
+                "spent_today": self.day.spent_sol,
                 "loss_today": self.day.loss_sol}
 
     def _recheck_safety(self, ctx: TradeContext) -> list[str]:
@@ -126,6 +150,8 @@ class CopyTradeEngine:
             problems.append("Token puanı eşik altına düştü (son kontrol)")
         if 0 < ctx.token_liquidity_sol < self.cfg.min_liquidity_sol:
             problems.append("Likidite eşik altına düştü (son kontrol)")
+        if ctx.market_price_sol <= 0:
+            problems.append("Giriş fiyatı alınamadı")
         return problems
 
     def on_leader_buy(self, db: Session, ctx: TradeContext) -> RiskDecision:
@@ -156,11 +182,17 @@ class CopyTradeEngine:
         if self.cfg.mode == "paper":
             self._execute_paper(db, ctx, decision.sol_amount)
         elif self.cfg.mode == "live":
-            self._execute_live(db, ctx, decision.sol_amount)
+            row = self._execute_live(db, ctx, decision.sol_amount)
+            decision.trade_id = row.id
+            decision.trade_status = row.status
+            if row.status == "failed":
+                decision.allowed = False
+                decision.reasons = [row.error or "Canlı alım gönderilemedi"]
         return decision
 
     def _execute_paper(self, db: Session, ctx: TradeContext, sol_amount: float) -> PaperTrade:
-        fill = self.paper.buy(ctx.token_mint, sol_amount, ctx.market_price_sol, reason="copy-buy")
+        reason = "ai-buy" if ctx.strategy == "ai" else "copy-buy"
+        fill = self.paper.buy(ctx.token_mint, sol_amount, ctx.market_price_sol, reason=reason)
         self.day.spent_sol += sol_amount
         self.day.open_positions[ctx.token_mint] = self.day.open_positions.get(ctx.token_mint, 0) + 1
         row = PaperTrade(
@@ -173,7 +205,7 @@ class CopyTradeEngine:
             fee_sol=fill.fee_sol,
             slippage_est=fill.slippage,
             is_open=True,
-            reason="copy-buy (paper)",
+            reason=("ai-buy (paper)" if ctx.strategy == "ai" else "copy-buy (paper)"),
             source_signature=ctx.source_signature,
         )
         db.add(row)
@@ -220,8 +252,88 @@ class CopyTradeEngine:
         db.refresh(row)
         return row
 
+    def _open_live_position(self, db: Session, token_mint: str) -> tuple[float, float]:
+        """Canlı trade kayıtlarından yaklaşık açık miktar ve maliyeti türetir.
+
+        PumpPortal gönderiminde kesin fill miktarı dönmediği için canlı kapanış
+        PnL'i yaklaşık tutulur; asıl amaç lider satışı gelince zincire sell emrini
+        göndermek ve açık durumu güvenli kapatmaktır.
+        """
+        rows = (
+            db.query(LiveTrade)
+            .filter(LiveTrade.token_mint == token_mint, LiveTrade.status != "failed")
+            .order_by(LiveTrade.created_at.asc())
+            .all()
+        )
+        qty = 0.0
+        cost = 0.0
+        for r in rows:
+            if r.side == "buy":
+                qty += float(r.token_amount or 0.0)
+                cost += float(r.sol_amount or 0.0)
+            elif r.side == "sell" and qty > 0:
+                sold_qty = min(qty, float(r.token_amount or 0.0))
+                frac = sold_qty / qty if qty > 0 else 0.0
+                cost -= cost * frac
+                qty -= sold_qty
+                if qty <= 1e-9:
+                    qty = 0.0
+                    cost = 0.0
+        return qty, cost
+
+    def _execute_live_sell(self, db: Session, ctx: TradeContext, fraction: float) -> LiveTrade | None:
+        if not self.cfg.live_confirmed:
+            raise LiveTradingNotConfigured("Canlı işlem onaylanmamış")
+        if self.signer is None:
+            raise LiveTradingNotConfigured("İmzalayıcı (PumpPortal) yapılandırılmamış")
+        qty, cost = self._open_live_position(db, ctx.token_mint)
+        if qty <= 1e-12:
+            return None
+        fraction = max(0.0, min(1.0, fraction))
+        qty_sell = qty * fraction
+        has_price = ctx.market_price_sol > 0
+        proceeds_est = qty_sell * ctx.market_price_sol if has_price else 0.0
+        cost_part = cost * fraction
+        row = LiveTrade(
+            wallet_address=ctx.wallet_address,
+            token_mint=ctx.token_mint,
+            side="sell",
+            sol_amount=proceeds_est,
+            token_amount=qty_sell,
+            price_sol=ctx.market_price_sol if has_price else 0.0,
+            status="pending",
+            is_open=False,
+            realized_pnl_sol=(proceeds_est - cost_part) if has_price else 0.0,
+            source_signature=ctx.source_signature,
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        try:
+            sig = self.signer.submit_sell(
+                ctx.token_mint,
+                fraction,
+                ctx.market_price_sol,
+                max_slippage=self.cfg.max_slippage,
+                priority_fee_sol=self.cfg.priority_fee_sol,
+            )
+            row.signature = sig
+            row.status = "submitted"
+            if fraction >= 0.999:
+                self.day.open_positions.pop(ctx.token_mint, None)
+            elif ctx.token_mint in self.day.open_positions:
+                self.day.open_positions[ctx.token_mint] = max(0, self.day.open_positions[ctx.token_mint] - 1)
+        except Exception as exc:  # noqa: BLE001
+            row.status = "failed"
+            row.error = str(exc)[:240]
+            logger.warning("Canlı satış başarısız: %s", exc)
+        row.created_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(row)
+        return row
+
     def on_leader_sell(self, db: Session, ctx: TradeContext, leader_sell_fraction: float):
-        """Hedef kısmi/tam satış yaptığında yansıt (paper)."""
+        """Hedef kısmi/tam satış yaptığında yansıt (paper/live)."""
         if self.cfg.mode == "paper":
             fill = self.paper.mirror_leader_sell(ctx.token_mint, leader_sell_fraction, ctx.market_price_sol)
             if fill:
@@ -238,4 +350,6 @@ class CopyTradeEngine:
                 db.commit()
                 db.refresh(row)
                 return row
+        if self.cfg.mode == "live":
+            return self._execute_live_sell(db, ctx, leader_sell_fraction)
         return None

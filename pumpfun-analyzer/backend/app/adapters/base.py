@@ -14,6 +14,10 @@ from typing import Any, Protocol
 @dataclass
 class TokenMarketData:
     mint: str
+    name: str | None = None
+    symbol: str | None = None
+    image_url: str | None = None
+    pair_url: str | None = None
     price_usd: float | None = None
     price_sol: float | None = None
     liquidity_usd: float | None = None

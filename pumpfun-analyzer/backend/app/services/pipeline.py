@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from ..adapters.base import ChainProvider
 from ..adapters.pumpfun import normalize_enhanced_transaction, normalize_rpc_transaction
+from ..core.analysis.copyability import compute_copyability
 from ..core.analysis.pnl import SwapEvent, compute_performance
 from ..core.analysis.swap_detection import NormalizedTx, detect_swap
 from ..core.classification.copy_trader import TradeRef, detect_copy_trader
@@ -27,6 +28,7 @@ from ..core.scoring.wallet_scoring import WalletSignals, score_wallet
 from ..models import Swap
 from .analysis_service import get_or_create_wallet, persist_wallet_score
 from .settings_service import get_setting
+from .wallet_relationships import record_transfer_relationships_from_enhanced, relationship_summary
 
 
 def store_swap(db: Session, swap) -> Swap | None:
@@ -85,6 +87,7 @@ def _ingest_wallet_enhanced(db: Session, provider, address: str, limit: int) -> 
             break
         if not page:
             break
+        record_transfer_relationships_from_enhanced(db, address, page)
         for enh in page:
             ntx = normalize_enhanced_transaction(enh)
             if ntx is None:
@@ -150,6 +153,27 @@ def analyze_wallet(
         for s in swaps
     ]
     perf = compute_performance(events)
+    risk_settings = get_setting(db, "risk")
+    copyability_metrics: dict = {}
+    if risk_settings.get("copyability_enabled", True):
+        mints = sorted({s.token_mint for s in swaps if s.token_mint})
+        market_swaps = []
+        if mints:
+            market_swaps = (
+                db.query(Swap)
+                .filter(Swap.token_mint.in_(mints), Swap.price_sol > 0)
+                .order_by(Swap.block_time.asc())
+                .all()
+            )
+        copyability_metrics = compute_copyability(
+            address,
+            swaps,
+            market_swaps,
+            copy_amount_sol=float(risk_settings.get("copyability_amount_sol", 0.01)),
+            delays_seconds=risk_settings.get("copyability_delays_seconds", [5, 10, 30]),
+            slippage=float(risk_settings.get("max_slippage", 0.0) or 0.0),
+            priority_fee_sol=float(risk_settings.get("priority_fee_sol", 0.0005) or 0.0),
+        ).as_metrics()
 
     # --- sinyaller ---
     history_days = 0.0
@@ -162,6 +186,8 @@ def analyze_wallet(
 
     # transfer gürültüsü: kaydedilmemiş transferleri tahmin edemeyiz; metrikten gelir
     transfer_noise = (extra_signals or {}).get("transfer_noise_ratio", 0.0)
+
+    rel_summary = relationship_summary(db, address)
 
     # sniper / scalper
     first_buy_offsets = []
@@ -186,7 +212,10 @@ def analyze_wallet(
         copy_confidence=copy_conf,
         sniper_confidence=sn.confidence if sn.is_sniper else sn.confidence * 0.5,
         scalper_confidence=1.0 if sn.is_scalper else 0.0,
-        insider_confidence=(extra_signals or {}).get("insider_confidence", 0.0),
+        insider_confidence=max(
+            (extra_signals or {}).get("insider_confidence", 0.0),
+            1.0 if rel_summary["related_tracked_wallet_count"] > 0 else 0.0,
+        ),
         is_token_creator=(extra_signals or {}).get("is_token_creator", False),
         history_days=history_days,
         days_since_last_trade=days_since_last,
@@ -195,9 +224,23 @@ def analyze_wallet(
 
     weights = get_setting(db, "wallet_weights")
     eligibility = get_setting(db, "wallet_eligibility")
+    eligibility.update({
+        "copyability_min_sample": int(risk_settings.get("copyability_min_sample", 12)),
+        "copyability_require_min_sample": bool(risk_settings.get("copyability_require_min_sample", True)),
+        "copyability_min_coverage": float(risk_settings.get("copyability_min_coverage", 0.70)),
+        "copyability_max_entry_jump_10s": float(risk_settings.get("copyability_max_entry_jump_10s", 0.15)),
+        "copyability_min_pnl_10s": float(risk_settings.get("copyability_min_pnl_10s", 0.001)),
+    })
     threshold = get_setting(db, "thresholds").get("wallet", 70.0)
 
-    result = score_wallet(perf, signals, weights=weights, eligibility=eligibility, threshold=threshold)
+    result = score_wallet(
+        perf,
+        signals,
+        copyability_metrics=copyability_metrics,
+        weights=weights,
+        eligibility=eligibility,
+        threshold=threshold,
+    )
     wallet = get_or_create_wallet(db, address)
     # Liderin ORTALAMA alım büyüklüğü (SOL) — 10 SOL'lük trader ile 0.01'lik dust'ı
     # ayırt etmek için (kopyalama miktarımızı değiştirmez; sınıflandırma sinyali).
@@ -211,9 +254,16 @@ def analyze_wallet(
         "realized_pnl_sol": perf.realized_pnl_sol,
         "profit_factor": None if perf.profit_factor == float("inf") else perf.profit_factor,
         "token_diversity": perf.token_diversity,
+        "avg_hold_seconds": perf.avg_hold_seconds,
         "median_hold_seconds": perf.median_hold_seconds,
+        "short_hold_ratio": perf.short_hold_ratio,
+        "largest_trade_pnl_share": perf.largest_trade_pnl_share,
+        "sniper_confidence": signals.sniper_confidence,
+        "scalper_confidence": signals.scalper_confidence,
         "history_days": history_days,
         "avg_buy_size_sol": round(avg_buy, 4),
+        **rel_summary,
+        **copyability_metrics,
     }
     if persist:
         persist_wallet_score(db, wallet, result, metrics=metrics, demote_below=max(0.0, threshold - 5))

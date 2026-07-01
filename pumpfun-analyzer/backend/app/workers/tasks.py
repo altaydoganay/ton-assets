@@ -61,10 +61,28 @@ def _singleton(name: str, ttl: int = 600):
                 pass
 
 
+def _strategy_mode_db(db) -> str:
+    try:
+        from ..services.settings_service import get_strategy_mode
+        return get_strategy_mode(db)
+    except Exception:  # noqa: BLE001
+        return "copy"
+
+
+def _skip_for_mode(db, required: str, task: str) -> dict | None:
+    mode = _strategy_mode_db(db)
+    if mode != required:
+        return {"skipped": f"{task}: aktif mod {mode}, gerekli mod {required}", "strategy_mode": mode}
+    return None
+
+
 @celery_app.task(name="app.workers.tasks.ingest_and_analyze_wallet")
 def ingest_and_analyze_wallet(address: str) -> dict:
     db = SessionLocal()
     try:
+        skip = _skip_for_mode(db, "copy", "ingest_and_analyze_wallet")
+        if skip:
+            return skip
         provider = build_chain_provider()
         try:
             n = ingest_wallet(db, provider, address)
@@ -92,6 +110,9 @@ def analyze_discovered() -> dict:
 
     db = SessionLocal()
     try:
+      skip = _skip_for_mode(db, "copy", "analyze_discovered")
+      if skip:
+        return skip
       with _singleton("analyze_discovered", ttl=600) as got:
         if not got:
             return {"skipped": "locked"}  # zaten çalışıyor (paralel katlanmayı önle)
@@ -106,9 +127,9 @@ def analyze_discovered() -> dict:
         # ve GÖRÜNÜR şekilde erir. Kapalıyken normal yavaş damlama (discovery_batch_size).
         # Beat tabanlı olduğundan deploy/worker restart'ına dayanıklıdır (sonraki
         # tik kaldığı yerden sürer); kendini-zincirleyen kırılgan göreve gerek yok.
-        autodrain = get_runtime_flag(db, "backlog_autodrain", False)
-        budget = 90.0 if autodrain else 0.0
-        chunk = 25 if autodrain else settings.discovery_batch_size
+        autodrain = get_runtime_flag(db, "backlog_autodrain", True)
+        budget = 60.0 if autodrain else 0.0
+        chunk = 30 if autodrain else settings.discovery_batch_size
         start = _t.monotonic()
         processed = tracked = 0
         fc: Counter = Counter()
@@ -178,6 +199,9 @@ def reevaluate_analyzed() -> dict:
 
     db = SessionLocal()
     try:
+      skip = _skip_for_mode(db, "copy", "reevaluate_analyzed")
+      if skip:
+        return skip
       with _singleton("reevaluate_analyzed", ttl=600) as got:
         if not got:
             return {"skipped": "locked"}
@@ -221,12 +245,17 @@ def poll_tracked_wallets() -> dict:
 
     db = SessionLocal()
     try:
+      skip = _skip_for_mode(db, "copy", "poll_tracked_wallets")
+      if skip:
+        return skip
       with _singleton("poll_tracked_wallets", ttl=120) as got:
         if not got:
             return {"skipped": "locked"}
-        fresh = int(settings.tracked_poll_fresh_seconds)
+        per_wallet = max(3, min(int(settings.tracked_poll_per_wallet), 6))
+        max_wallets = max(25, min(int(settings.tracked_poll_max_wallets), 75))
+        fresh = max(60, min(int(settings.tracked_poll_fresh_seconds), 300))
         try:
-            chain = build_chain_provider(throttle=False)
+            chain = build_chain_provider(throttle=True)
         except Exception as exc:  # noqa: BLE001
             logger.info("Zincir sağlayıcı kurulamadı (watch): %s", exc)
             return {"triggered": 0, "error": "provider"}
@@ -239,9 +268,9 @@ def poll_tracked_wallets() -> dict:
             signer = None
         result = _poll(
             db, chain, market=build_market_provider(), signer=signer,
-            per_wallet=int(settings.tracked_poll_per_wallet),
+            per_wallet=per_wallet,
             fresh_seconds=fresh,
-            max_wallets=int(settings.tracked_poll_max_wallets),
+            max_wallets=max_wallets,
         )
         # Panelde (Loglar) GÖRÜNÜR durum: aktivite varsa hemen yaz; aktivite yoksa
         # en çok ~20 dk'da bir "nabız" yaz (Loglar'ı boğmadan izleyici canlı mı,
@@ -255,7 +284,7 @@ def poll_tracked_wallets() -> dict:
             show = (fresh_buys > 0) or (triggered > 0) or (mirrored > 0) or _should_heartbeat(db, "watch", 20)
             if show:
                 from datetime import datetime, timezone, timedelta
-                from ..models import AuditLog, PaperTrade
+                from ..models import AuditLog, LiveTrade, PaperTrade
                 from ..services.settings_service import get_setting
                 gate = get_setting(db, "risk").get("token_gate", "safety")
                 reasons = result.get("reasons") or {}
@@ -265,10 +294,13 @@ def poll_tracked_wallets() -> dict:
                 hr_ago = datetime.now(timezone.utc) - timedelta(hours=1)
                 paper_1h = (db.query(PaperTrade)
                             .filter(PaperTrade.side == "buy", PaperTrade.created_at >= hr_ago).count())
+                live_1h = (db.query(LiveTrade)
+                           .filter(LiveTrade.side == "buy", LiveTrade.status != "failed",
+                                   LiveTrade.created_at >= hr_ago).count())
                 last_dec = (db.query(AuditLog).filter(AuditLog.category == "trading")
                             .order_by(AuditLog.id.desc()).first())
                 last_txt = (last_dec.message[:130] if last_dec else "henüz alım-başına karar yok")
-                tail = f" · son 1s paper alım: {paper_1h} · son karar: {last_txt}"
+                tail = f" · son 1s alım: paper {paper_1h}, live {live_1h} · son karar: {last_txt}"
                 if not polled:
                     msg = "İzleme: takip edilen aktif cüzdan yok (havuz boş)"
                 elif fresh_buys == 0:
@@ -298,6 +330,9 @@ def prune_underperformers() -> dict:
 
     db = SessionLocal()
     try:
+      skip = _skip_for_mode(db, "copy", "prune_underperformers")
+      if skip:
+        return skip
       with _singleton("prune_underperformers", ttl=300) as got:
         if not got:
             return {"skipped": "locked"}
@@ -323,6 +358,9 @@ def enforce_tracked_cap() -> dict:
     from ..services.settings_service import get_setting
     db = SessionLocal()
     try:
+        skip = _skip_for_mode(db, "copy", "enforce_tracked_cap")
+        if skip:
+            return skip
         cap = int((get_setting(db, "thresholds") or {}).get("max_tracked", 0) or 0)
         if cap <= 0:
             return {"cap": 0}
@@ -345,10 +383,57 @@ def enforce_tracked_cap() -> dict:
 def reanalyze_tracked() -> dict:
     db = SessionLocal()
     try:
+        skip = _skip_for_mode(db, "copy", "reanalyze_tracked")
+        if skip:
+            return skip
         tracked = db.query(Wallet).filter(Wallet.status == WalletStatus.tracked.value).all()
         for w in tracked:
             ingest_and_analyze_wallet.delay(w.address)
         return {"queued": len(tracked)}
+    finally:
+        db.close()
+
+
+@celery_app.task(name="app.workers.tasks.watch_leader_holdings")
+def watch_leader_holdings() -> dict:
+    """Açık copy pozisyonlarını korur: lider tokenı artık tutmuyorsa bizim
+    pozisyonu acil kapatır. WS/poll SELL olayı kaçarsa rug riskini azaltan
+    güvenlik ağıdır."""
+    from ..adapters.registry import build_chain_provider, build_market_provider
+    from ..services.leader_hold_watch import run_leader_hold_watch
+
+    db = SessionLocal()
+    try:
+      skip = _skip_for_mode(db, "copy", "watch_leader_holdings")
+      if skip:
+        return skip
+      with _singleton("watch_leader_holdings", ttl=90) as got:
+        if not got:
+            return {"skipped": "locked"}
+        chain = build_chain_provider(throttle=False)
+        try:
+            market = build_market_provider()
+        except Exception:  # noqa: BLE001
+            market = None
+        result = run_leader_hold_watch(db, chain, market=market)
+        # Düzenli nabız: yalnızca sorun/aksiyon varsa veya uzun süre geçtiyse logla.
+        try:
+            from ..models import AuditLog
+            if result.get("closed") or result.get("errors") or _should_heartbeat(db, "leader_watch", minutes=15):
+                db.add(AuditLog(
+                    level="warning" if result.get("closed") or result.get("errors") else "info",
+                    category="leader_watch",
+                    message=(
+                        f"Lider elde tutma kontrolü: {result.get('checked', 0)} kontrol · "
+                        f"{result.get('closed', 0)} kapandı · {result.get('errors', 0)} hata · "
+                        f"{result.get('positions', 0)} açık"
+                    ),
+                    context=result,
+                ))
+                db.commit()
+        except Exception:  # noqa: BLE001
+            db.rollback()
+        return result
     finally:
         db.close()
 
@@ -388,6 +473,9 @@ def drain_backlog(target: int = 2000, ingest_limit: int = 80, budget_seconds: in
 
     db = SessionLocal()
     try:
+      skip = _skip_for_mode(db, "copy", "drain_backlog")
+      if skip:
+        return skip
       with _singleton("drain_backlog", ttl=budget_seconds + 60) as got:
         if not got:
             return {"skipped": "zaten çalışıyor"}

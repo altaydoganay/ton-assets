@@ -105,9 +105,13 @@ def build_token_metrics(mint: str, chain: ChainProvider, market: MarketProvider)
     try:
         md = market.get_token_market(mint)
         if md.ok:
+            m.price_sol = float(md.price_sol or 0.0)
+            m.price_usd = float(md.price_usd or 0.0)
+            m.liquidity_usd = float(md.liquidity_usd or 0.0)
             m.market_cap_usd = md.market_cap_usd or 0.0
             m.fdv_usd = md.fdv_usd or 0.0
             m.volume_24h_usd = md.volume_24h_usd or 0.0
+            m.pair_created_at = int(md.pair_created_at or 0)
             # likidite SOL'a çevir: sol_usd = price_usd / price_sol
             if md.liquidity_usd and md.price_usd and md.price_sol:
                 sol_usd = md.price_usd / md.price_sol if md.price_sol else 0
@@ -138,8 +142,13 @@ def analyze_token(db: Session, mint: str, chain: ChainProvider, market: MarketPr
     token.stage = metrics.stage
     metrics_dict = {
         "liquidity_sol": metrics.liquidity_sol,
+        "price_sol": metrics.price_sol,
+        "price_usd": metrics.price_usd,
+        "liquidity_usd": metrics.liquidity_usd,
         "market_cap_usd": metrics.market_cap_usd,
+        "fdv_usd": metrics.fdv_usd,
         "volume_24h_usd": metrics.volume_24h_usd,
+        "pair_created_at": metrics.pair_created_at,
         "unique_holders": metrics.unique_holders,
         "top10_pct": metrics.top10_pct,
         "insider_supply_pct": metrics.insider_supply_pct,

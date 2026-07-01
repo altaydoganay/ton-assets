@@ -28,7 +28,7 @@ from ..adapters.pumpportal import PumpPortalTrade, PumpPortalTrader
 from ..core.analysis.swap_detection import detect_swap
 from sqlalchemy import case, func
 
-from ..models import Alert, PaperTrade, Wallet, WalletStatus
+from ..models import Alert, LiveTrade, PaperTrade, Wallet, WalletStatus
 from ..notifications.telegram import TelegramNotifier
 from .live_flow import handle_trade_event
 
@@ -103,16 +103,25 @@ def poll_tracked_wallets(
                     continue
             elif swap.side == "sell":
                 # Lider SATIŞINI yansıt — ama yalnızca o token'da AÇIK pozisyonumuz varsa.
-                net = (db.query(
+                net_paper = (db.query(
                     func.coalesce(func.sum(
                         case((PaperTrade.side == "buy", PaperTrade.token_amount),
                              else_=-PaperTrade.token_amount)), 0.0))
                     .filter(PaperTrade.token_mint == swap.token_mint).scalar() or 0.0)
-                if net <= 0:
+                net_live = (db.query(
+                    func.coalesce(func.sum(
+                        case((LiveTrade.side == "buy", LiveTrade.token_amount),
+                             else_=-LiveTrade.token_amount)), 0.0))
+                    .filter(LiveTrade.token_mint == swap.token_mint, LiveTrade.status != "failed")
+                    .scalar() or 0.0)
+                if net_paper <= 0 and net_live <= 0:
                     continue  # elimizde pozisyon yok — yansıtacak bir şey yok
                 # dedup: bu satışı zaten yansıttıysak atla
                 if db.query(PaperTrade).filter(PaperTrade.source_signature == swap.signature,
                                                PaperTrade.side == "sell").first():
+                    continue
+                if db.query(LiveTrade).filter(LiveTrade.source_signature == swap.signature,
+                                              LiveTrade.side == "sell").first():
                     continue
             else:
                 continue

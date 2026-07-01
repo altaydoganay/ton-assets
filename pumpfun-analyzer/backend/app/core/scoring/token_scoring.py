@@ -60,10 +60,14 @@ class TokenMetrics:
     creator_prior_tokens: int = 0
 
     # likidite / piyasa
+    price_sol: float = 0.0
+    price_usd: float = 0.0
     liquidity_sol: float = 0.0
+    liquidity_usd: float = 0.0
     market_cap_usd: float = 0.0
     fdv_usd: float = 0.0
     volume_24h_usd: float = 0.0
+    pair_created_at: int = 0
     fake_liquidity_suspected: bool = False
 
     # organik büyüme

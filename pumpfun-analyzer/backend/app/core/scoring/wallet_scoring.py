@@ -1,11 +1,12 @@
 """Cüzdan puanlama motoru (100 üzerinden).
 
 Ağırlıklar (varsayılan, panelden değiştirilebilir):
-  performance   %25  — işlem başarısı ve örneklem kalitesi
-  consistency   %20  — tutarlılık
+  copyability   %25  — 0.01 SOL ile gecikmeli kopyalanabilirlik
+  performance   %15  — liderin kendi işlem başarısı ve örneklem kalitesi
+  consistency   %15  — tutarlılık
   risk          %15  — risk ve maksimum düşüş
-  organic       %15  — organik işlem davranışı
-  hold_quality  %10  — tutma süresi kalitesi
+  organic       %10  — organik işlem davranışı
+  hold_quality  %5   — tutma süresi kalitesi
   safety        %10  — rug/copy/insider güvenliği
   recency       %5   — güncellik ve aktiflik
 
@@ -22,39 +23,53 @@ from dataclasses import dataclass, field
 from ..analysis.pnl import WalletPerformance
 
 DEFAULT_WEIGHTS = {
-    "performance": 0.25,
-    "consistency": 0.20,
+    "copyability": 0.25,
+    "performance": 0.15,
+    "consistency": 0.15,
     "risk": 0.15,
-    "organic": 0.15,
-    "hold_quality": 0.10,
+    "organic": 0.10,
+    "hold_quality": 0.05,
     "safety": 0.10,
     "recency": 0.05,
 }
 
 # Pump.fun gerçeğine uyarlanmış eşikler: pump.fun degen/hızlı bir ortamdır;
 # tokenler dakikalar-saatler yaşar. "30 gün geçmiş / 30 dk medyan tutma" gibi
-# katı kriterler gerçek pump.fun trader'larını bile eler. Bu değerler hızlı ama
+# katı kriterler gerçek pump.fun trader'larını bile eler. Geçmiş gün sayısı artık
+# takip eligibility filtresi değildir; örneklem/copyability asıl karar vericidir.
+# Bu değerler hızlı ama
 # TUTARLI trader'ları geçirip tek-atışlık/rug cüzdanları elemeye dengelenmiştir.
 # Tümü panelden değiştirilebilir (API ve RPC Ayarları).
 DEFAULT_ELIGIBILITY = {
     # KALİTE AŞAMASI: geniş ağ ile 500+ aday toplandı; artık daha seçiciyiz.
     # Bu kriterler hem yeni takibe alımı hem de yeniden değerlendirmeyi (eleme
     # KALICI olsun diye) bağlar. Daha gevşek değerler keşif/havuz-büyütme içindi.
-    "min_closed_positions": 8,         # yeterli örneklem (tek-iki işlem değil)
-    "min_distinct_tokens": 4,          # birden çok tokende tutarlılık (şans değil)
-    "min_history_days": 1.0,
+    "min_closed_positions": 10,        # yeterli örneklem (tek-iki işlem değil)
+    "min_distinct_tokens": 5,          # birden çok tokende tutarlılık (şans değil)
+    "min_history_days": 0.0,
+    "min_realized_pnl_sol": 0.0,       # liderin kendi geçmişi de en az zarar yazmamalı
+    "min_profit_factor": 1.20,         # marjı çok ince cüzdanları canlıya taşıma
     # Kârlı pump.fun trader'ları çoğu zaman %40-50 isabetle ama yüksek profit
     # factor ile kazanır; yüksek eşik bu profilleri sessizce eliyordu. Kaliteyi
     # win-rate değil; profit factor + organik/sniper/veto + toplam puan belirler.
     # Win-rate yalnızca tam tersine (rug/tek-atış) karşı taban filtre.
     "min_win_rate": 0.40,
-    "min_median_hold_seconds": 180,    # 3 dk (pump.fun hızlı; sniper saniyeler içinde flip eder)
-    "max_short_hold_ratio": 0.70,      # <10 dk kapanışlar
-    "max_single_trade_pnl_share": 0.75,
+    "min_median_hold_seconds": 300,    # 5 dk altı davranış follower için çoğu zaman gecikme zararıdır
+    "max_short_hold_ratio": 0.45,      # <10 dk kapanışlar
+    "max_single_trade_pnl_share": 0.55,
     # AKTİF cüzdana öncelik: kopya-ticarette uyuyan (son N gün işlem yapmamış)
     # bir cüzdanı takip etmek anlamsızdır — yeni alımı gelmez. 7 gün = pump.fun
     # için makul "hâlâ aktif" penceresi (eski 14 çok gevşekti).
-    "max_days_since_last_trade": 7,
+    "max_days_since_last_trade": 3,
+    "copyability_min_sample": 12,
+    "copyability_require_min_sample": True,
+    "copyability_min_coverage": 0.70,
+    "copyability_max_entry_jump_10s": 0.15,
+    "copyability_min_pnl_10s": 0.001,
+    "copyability_min_score": 65,
+    "copyability_min_profit_factor_10s": 1.40,
+    "max_sniper_confidence": 0.45,
+    "max_scalper_confidence": 0.45,
 }
 
 
@@ -82,6 +97,7 @@ class WalletScoreResult:
     hold_quality: float
     safety: float
     recency: float
+    copyability: float = 0.0
     breakdown: dict = field(default_factory=dict)
     vetoed: bool = False
     veto_reasons: list[str] = field(default_factory=list)
@@ -98,15 +114,42 @@ def _clamp(x: float, lo: float = 0.0, hi: float = 100.0) -> float:
 def score_wallet(
     perf: WalletPerformance,
     signals: WalletSignals,
+    copyability_metrics: dict | None = None,
     weights: dict | None = None,
     eligibility: dict | None = None,
     threshold: float = 70.0,
 ) -> WalletScoreResult:
     w = {**DEFAULT_WEIGHTS, **(weights or {})}
+    weight_total = sum(float(v) for v in w.values()) or 1.0
+    w = {k: float(v) / weight_total for k, v in w.items()}
     elig = {**DEFAULT_ELIGIBILITY, **(eligibility or {})}
     breakdown: dict = {}
 
-    # --- performance (%25): win_rate + profit_factor + örneklem ---
+    copy_m = copyability_metrics or {}
+
+    # --- copyability (%25): 0.01 SOL gecikmeli kopya simülasyonu ---
+    copyability = float(copy_m.get("copyability_score") if copy_m.get("copyability_score") is not None else 50.0)
+    c_sample = int(copy_m.get("copy_sample_size") or 0)
+    c_cov = float(copy_m.get("copy_coverage_ratio") or 0.0)
+    c_pnl_5 = float(copy_m.get("copy_pnl_5s_sol") or 0.0)
+    c_pnl_10 = float(copy_m.get("copy_pnl_10s_sol") or 0.0)
+    c_pnl_30 = float(copy_m.get("copy_pnl_30s_sol") or 0.0)
+    c_pf_10 = copy_m.get("copy_profit_factor_10s")
+    c_pf_10_float = float(c_pf_10) if c_pf_10 is not None else float("inf") if c_pnl_10 > 0 else 0.0
+    c_jump_10 = float(copy_m.get("avg_entry_jump_10s") or 0.0)
+    breakdown["copyability"] = {
+        "copyability_score": round(copyability, 1),
+        "copy_pnl_5s_sol": round(c_pnl_5, 6),
+        "copy_pnl_10s_sol": round(c_pnl_10, 6),
+        "copy_pnl_30s_sol": round(c_pnl_30, 6),
+        "copy_profit_factor_10s": None if c_pf_10_float == float("inf") else round(c_pf_10_float, 3),
+        "copy_sample_size": c_sample,
+        "copy_coverage_ratio": round(c_cov, 3),
+        "avg_entry_jump_10s": round(c_jump_10, 3),
+        "value": round(copyability, 1),
+    }
+
+    # --- performance (%20): win_rate + profit_factor + örneklem ---
     pf = perf.profit_factor
     pf_norm = 100.0 if pf == float("inf") else _clamp((pf / 3.0) * 100.0)
     sample_norm = _clamp((perf.closed_positions / 30.0) * 100.0)
@@ -195,7 +238,8 @@ def score_wallet(
     }
 
     raw_total = (
-        w["performance"] * performance
+        w["copyability"] * copyability
+        + w["performance"] * performance
         + w["consistency"] * consistency
         + w["risk"] * risk
         + w["organic"] * organic
@@ -205,7 +249,13 @@ def score_wallet(
     )
 
     # Güvene göre nötr (50) değere doğru çek: az veri => temkinli puan.
-    confidence = perf.confidence
+    if copy_m:
+        copy_confidence = min(1.0, c_cov) if c_sample >= 1 else 0.0
+        if c_sample < int(elig.get("copyability_min_sample", 12)):
+            copy_confidence *= 0.65
+        confidence = min(1.0, max(0.0, perf.confidence * 0.75 + copy_confidence * 0.25))
+    else:
+        confidence = perf.confidence
     total = raw_total * confidence + 50.0 * (1 - confidence)
     total = round(_clamp(total), 1)
 
@@ -221,6 +271,12 @@ def score_wallet(
         veto_reasons.append("Yüksek insider/sybil güveni")
     if signals.sniper_confidence >= 0.7:
         veto_reasons.append("Yüksek sniper güveni")
+    max_sniper = float(elig.get("max_sniper_confidence", 1.0) or 1.0)
+    max_scalper = float(elig.get("max_scalper_confidence", 1.0) or 1.0)
+    if signals.sniper_confidence > max_sniper:
+        veto_reasons.append(f"Sniper davranışı canlı kopya için yüksek ({signals.sniper_confidence:.2f})")
+    if signals.scalper_confidence > max_scalper:
+        veto_reasons.append(f"Scalper davranışı canlı kopya için yüksek ({signals.scalper_confidence:.2f})")
     vetoed = bool(veto_reasons)
 
     # --- Uygunluk (eleme) kuralları ---
@@ -229,10 +285,17 @@ def score_wallet(
         failures.append(f"Kapalı pozisyon < {elig['min_closed_positions']}")
     if perf.token_diversity < elig["min_distinct_tokens"]:
         failures.append(f"Farklı token < {elig['min_distinct_tokens']}")
-    if signals.history_days < elig["min_history_days"]:
-        failures.append(f"Geçmiş < {elig['min_history_days']} gün")
+    min_history_days = float(elig.get("min_history_days", 0.0) or 0.0)
+    if min_history_days > 0 and signals.history_days < min_history_days:
+        failures.append(f"Geçmiş < {min_history_days} gün")
     if perf.win_rate < elig["min_win_rate"]:
         failures.append(f"Başarı oranı < %{elig['min_win_rate']*100:.0f}")
+    min_realized = float(elig.get("min_realized_pnl_sol", 0.0) or 0.0)
+    if perf.realized_pnl_sol <= min_realized:
+        failures.append(f"Lider realized PnL yetersiz ({perf.realized_pnl_sol:+.4f} SOL)")
+    min_pf = float(elig.get("min_profit_factor", 0.0) or 0.0)
+    if min_pf and perf.profit_factor != float("inf") and perf.profit_factor < min_pf:
+        failures.append(f"Lider profit factor düşük ({perf.profit_factor:.2f})")
     if perf.median_hold_seconds < elig["min_median_hold_seconds"]:
         failures.append("Medyan tutma süresi çok kısa")
     if perf.short_hold_ratio > elig["max_short_hold_ratio"]:
@@ -242,6 +305,20 @@ def score_wallet(
     max_idle = elig.get("max_days_since_last_trade", 0)
     if max_idle and signals.days_since_last_trade > max_idle:
         failures.append(f"Son işlemden {signals.days_since_last_trade:.0f} gün geçti (>{max_idle:.0f}) — aktif değil")
+    min_copy_sample = int(elig.get("copyability_min_sample", 12))
+    if c_sample >= min_copy_sample:
+        if copyability < float(elig.get("copyability_min_score", 0.0) or 0.0):
+            failures.append(f"Copyability score düşük ({copyability:.0f})")
+        if c_pnl_10 <= float(elig.get("copyability_min_pnl_10s", 0.0)):
+            failures.append("10sn gecikmeli 0.01 SOL copy PnL pozitif değil")
+        if c_pf_10_float < float(elig.get("copyability_min_profit_factor_10s", 1.1) or 1.1):
+            failures.append("10sn copy profit factor düşük")
+        if c_jump_10 > float(elig.get("copyability_max_entry_jump_10s", 0.15)):
+            failures.append("Geç girince tepeden aldırıyor (10sn entry jump yüksek)")
+        if c_cov < float(elig.get("copyability_min_coverage", 0.70)):
+            failures.append("Copyability coverage düşük — inceleme gerekli")
+    elif bool(elig.get("copyability_require_min_sample", False)):
+        failures.append(f"Copyability örneklemi yetersiz ({c_sample}/{min_copy_sample})")
 
     eligible = not failures
     tracked = eligible and not vetoed and total >= threshold
@@ -255,6 +332,7 @@ def score_wallet(
         hold_quality=round(hold_quality, 1),
         safety=round(safety, 1),
         recency=round(recency, 1),
+        copyability=round(copyability, 1),
         breakdown=breakdown,
         vetoed=vetoed,
         veto_reasons=veto_reasons,

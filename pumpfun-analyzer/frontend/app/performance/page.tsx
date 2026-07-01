@@ -71,10 +71,10 @@ export default function Performance() {
       {sum && (
         <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
           <StatCard label="Bugün Harcanan" value={`${sum.today_spent_sol} SOL`} />
-          <StatCard label="Bugün PnL" value={`${sum.today_realized_pnl_sol} SOL`}
+          <StatCard label="Bugün Paper PnL" value={`${sum.today_realized_pnl_sol} SOL`}
             accent={sum.today_realized_pnl_sol >= 0 ? "#10b981" : "#ef4444"} />
           <StatCard label="Açık Pozisyon" value={sum.open_positions} />
-          <StatCard label="Açık Risk" value={`${sum.open_exposure_sol} SOL`} />
+          <StatCard label="Live PnL Tahmini" value={`${sum.today_live_estimated_pnl_sol ?? 0} SOL`} />
         </div>
       )}
 
@@ -115,7 +115,7 @@ export default function Performance() {
               <table className="w-full text-sm">
                 <thead><tr className="text-left muted">
                   <th className="py-1">Cüzdan</th><th>Durum</th><th>Kapanan</th><th>K / Z</th>
-                  <th>Başarı</th><th>Ardışık Zarar</th><th>Ort. Alım</th><th className="text-right">Kopya PnL</th>
+                  <th>Başarı</th><th>Ardışık Zarar</th><th>Copy Score</th><th>Pretrade 10s PnL</th><th>Ort. Alım</th><th className="text-right">Real Paper PnL</th>
                   <th className="text-right">Bana özel SOL</th>
                 </tr></thead>
                 <tbody>
@@ -129,6 +129,10 @@ export default function Performance() {
                       <td>{r.wins}/{r.losses}</td>
                       <td>%{Math.round((r.win_rate || 0) * 100)}</td>
                       <td style={r.consecutive_losses >= 3 ? { color: "var(--rose)", fontWeight: 700 } : {}}>{r.consecutive_losses}</td>
+                      <td>{r.copyability_score != null ? Math.round(Number(r.copyability_score)) : "—"}</td>
+                      <td style={r.pretrade_copy_pnl_10s != null ? { color: r.pretrade_copy_pnl_10s >= 0 ? "var(--emerald)" : "var(--rose)", fontWeight: 600 } : {}}>
+                        {r.pretrade_copy_pnl_10s != null ? `${Number(r.pretrade_copy_pnl_10s) >= 0 ? "+" : ""}${Number(r.pretrade_copy_pnl_10s).toFixed(4)}` : "—"}
+                      </td>
                       <td className="muted">{r.avg_buy_size_sol != null ? `${Number(r.avg_buy_size_sol).toFixed(3)} ◎` : "—"}</td>
                       <td className="text-right font-bold" style={{ color: r.total_pnl_sol >= 0 ? "var(--emerald)" : "var(--rose)" }}>
                         {r.total_pnl_sol >= 0 ? "+" : ""}{Number(r.total_pnl_sol).toFixed(4)}

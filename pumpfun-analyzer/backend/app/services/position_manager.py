@@ -11,8 +11,10 @@ Açık paper pozisyonları için her döngüde mevcut fiyatla şu çıkış kura
   4. ZAMAN ÇIKIŞI (`max_hold_minutes`)          — pump.fun token'leri hızlı söner;
      bu süre dolunca pozisyonu kapat.
 
-Zirve fiyat ve giriş zamanı `position_state` ayarında (DB) token başına tutulur
-(şema değişikliği yok); pozisyon kapanınca temizlenir.
+Zirve fiyat `position_state` ayarında (DB) pozisyon başına tutulur.
+Tutma süresi artık yöneticinin pozisyonu ilk gördüğü andan değil, gerçek buy
+kaydının `created_at` zamanından hesaplanır. Fiyat verisi gelmese bile max hold
+dolduysa paper pozisyon güvenli şekilde kapatılır.
 """
 from __future__ import annotations
 
@@ -55,14 +57,22 @@ def _decide(pnl_pct: float, peak_pnl_pct: float, drop_from_peak: float, held_min
     return None
 
 
-_LABEL = {"sl": "stop-loss", "tp": "take-profit", "trailing": "takip eden stop", "time": "zaman çıkışı"}
+_LABEL = {"sl": "stop-loss", "tp": "take-profit", "trailing": "takip eden stop", "time": "zaman çıkışı", "no_price_time": "zaman çıkışı / fiyat yok"}
+
+
+def _as_utc(dt: datetime | None, fallback: datetime) -> datetime:
+    if dt is None:
+        return fallback
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def manage_positions(db: Session, market: MarketProvider) -> list[dict]:
     """Akıllı çıkış kurallarını uygular; tetiklenen paper pozisyonlarını kapatır."""
     risk = get_setting(db, "risk")
-    if risk.get("pure_mirror_mode"):
-        return []  # SAF KOPYA: otomatik çıkış yok; yalnızca lider satınca satılır
+    if risk.get("pure_mirror_mode") and str(risk.get("strategy_mode", "copy")) != "ai":
+        return []  # SAF KOPYA: otomatik çıkış yok; yalnızca lider satınca satılır. AI modunda lider yoktur; TP/SL şarttır.
     tp = float(risk.get("take_profit_pct", 0) or 0)
     sl = float(risk.get("stop_loss_pct", 0) or 0)
     trail = float(risk.get("trailing_stop_pct", 0) or 0)
@@ -75,37 +85,59 @@ def manage_positions(db: Session, market: MarketProvider) -> list[dict]:
     now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
     closed = []
-    open_pos = open_positions(db)
-    open_mints = {p["token_mint"] for p in open_pos}
+    # Bu yönetici yalnızca PAPER simülasyonunu kapatır. open_positions() canlı
+    # pozisyonları da döndürür; canlıyı burada paper trade yazarak kapatmak hem
+    # gerçek satış yapmaz hem de panelde yanlış PnL üretir.
+    # Mod izolasyonu: AI modundayken yalnızca AI paper pozisyonları; Copy
+    # modundayken yalnızca copy paper pozisyonları yönetilir. Böylece mod
+    # değişince diğer motor arka planda pozisyon kapatmaya devam etmez.
+    active_strategy = str(risk.get("strategy_mode", "copy") or "copy")
+    open_pos = [p for p in open_positions(db) if p.get("mode", "paper") == "paper"]
+    if active_strategy == "ai":
+        open_pos = [p for p in open_pos if p.get("wallet_address") == "AI_TRADE"]
+    else:
+        open_pos = [p for p in open_pos if p.get("wallet_address") != "AI_TRADE"]
+    open_keys = {p.get("position_id") or p["token_mint"] for p in open_pos}
     # kapanmış pozisyonların durumunu temizle
-    state = {m: s for m, s in state.items() if m in open_mints}
+    state = {m: s for m, s in state.items() if m in open_keys}
 
     for p in open_pos:
         mint = p["token_mint"]
-        price = _price(db, market, mint)
-        if price <= 0:
-            continue
+        key = p.get("position_id") or mint
         cost = float(p["cost_sol"]); qty = float(p["qty"])
         if cost <= 0 or qty <= 0:
             continue
-        st = state.setdefault(mint, {"peak": price, "entry": now_iso})
-        st["peak"] = max(float(st.get("peak", price)), price)
-        peak = float(st["peak"])
-        pnl_pct = (qty * price - cost) / cost
-        peak_pnl_pct = (qty * peak - cost) / cost
-        drop_from_peak = (peak - price) / peak if peak > 0 else 0.0
-        try:
-            entry = datetime.fromisoformat(st.get("entry", now_iso))
-            if entry.tzinfo is None:
-                entry = entry.replace(tzinfo=timezone.utc)
-            held_min = (now - entry).total_seconds() / 60.0
-        except Exception:  # noqa: BLE001
-            held_min = 0.0
 
-        decision = _decide(pnl_pct, peak_pnl_pct, drop_from_peak, held_min,
-                           tp, sl, trail, trail_act, max_hold_min)
-        if decision is None:
-            continue
+        # Kritik düzeltme: hold süresi yöneticinin ilk gördüğü andan değil,
+        # pozisyonun gerçek ilk buy zamanından hesaplanır. Aksi halde worker
+        # gecikirse AI pozisyonu max-hold'a rağmen açık kalır.
+        entry = _as_utc(p.get("first_buy") or p.get("opened_at"), now)
+        held_min = max(0.0, (now - entry).total_seconds() / 60.0)
+
+        price = _price(db, market, mint)
+        if price <= 0:
+            # Pump.fun tokenlerinde DexScreener/RPC fiyatı geç veya hiç gelmeyebilir.
+            # Fiyat yok diye pozisyonu sonsuza kadar açık bırakmak paper sonuçlarını
+            # çarpıtır. Max hold dolduysa konservatif olarak 0 fiyatla kapatılır.
+            if max_hold_min > 0 and held_min >= max_hold_min:
+                decision = "no_price_time"
+                price = 0.0
+                pnl_pct = -1.0
+                peak_pnl_pct = -1.0
+                drop_from_peak = 1.0
+            else:
+                continue
+        else:
+            st = state.setdefault(key, {"peak": price})
+            st["peak"] = max(float(st.get("peak", price)), price)
+            peak = float(st["peak"])
+            pnl_pct = (qty * price - cost) / cost
+            peak_pnl_pct = (qty * peak - cost) / cost
+            drop_from_peak = (peak - price) / peak if peak > 0 else 0.0
+            decision = _decide(pnl_pct, peak_pnl_pct, drop_from_peak, held_min,
+                               tp, sl, trail, trail_act, max_hold_min)
+            if decision is None:
+                continue
 
         proceeds = qty * price
         pnl = proceeds - cost
@@ -114,13 +146,19 @@ def manage_positions(db: Session, market: MarketProvider) -> list[dict]:
             sol_amount=proceeds, token_amount=qty, price_sol=price, fee_sol=0.0,
             realized_pnl_sol=pnl, is_open=False, reason=f"{_LABEL[decision]} (paper)",
         ))
+        strategy = "ai" if p.get("wallet_address") == "AI_TRADE" else "copy"
         db.add(AuditLog(level="info", category="trading",
                         message=f"{_LABEL[decision].upper()} ile kapatıldı: {mint[:6]}… "
                                 f"PnL {round(pnl,4)} SOL ({round(pnl_pct*100)}% · {round(held_min)}dk)",
-                        context={"reason": decision, "pnl_sol": round(pnl, 4),
-                                 "pnl_pct": round(pnl_pct, 4), "held_min": round(held_min, 1)}))
-        state.pop(mint, None)
-        closed.append({"token_mint": mint, "reason": decision, "pnl_sol": round(pnl, 4)})
+                        context={"reason": decision, "exit_reason": decision,
+                                 "exit_label": _LABEL[decision], "strategy": strategy,
+                                 "wallet": p.get("wallet_address"), "token": mint,
+                                 "pnl_sol": round(pnl, 4),
+                                 "pnl_pct": round(pnl_pct, 4), "held_min": round(held_min, 1),
+                                 "entry_cost_sol": round(cost, 6), "exit_value_sol": round(proceeds, 6),
+                                 "exit_price_sol": price}))
+        state.pop(key, None)
+        closed.append({"token_mint": mint, "reason": decision, "pnl_sol": round(pnl, 4), "held_min": round(held_min, 1)})
 
     set_setting(db, "position_state", state)
     if closed:

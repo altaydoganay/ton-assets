@@ -14,6 +14,7 @@ class RiskConfig:
     enabled: bool = False                  # canlı/paper işlem motoru aktif mi
     mode: str = "paper"                    # paper | alerts_only | live
     live_confirmed: bool = False           # kullanıcı canlı riski onayladı mı
+    strategy_mode: str = "copy"             # copy | ai
 
     fixed_sol_amount: float = 0.05         # işlem başına sabit SOL (canlı)
     paper_trade_sol: float = 0.01          # PAPER modunda her işlem SABİT bu kadar
@@ -67,6 +68,8 @@ class RiskDecision:
     allowed: bool
     reasons: list[str] = field(default_factory=list)
     sol_amount: float = 0.0
+    trade_id: int | None = None
+    trade_status: str | None = None
 
 
 def effective_min_token_score(cfg: "RiskConfig") -> float:
@@ -112,9 +115,10 @@ def evaluate_buy(
         reasons.append("Cüzdan engellenmiş")
     if token_mint in cfg.blocked_tokens:
         reasons.append("Token engellenmiş")
-    if cfg.only_wallets and wallet_address not in cfg.only_wallets:
+    is_ai = getattr(cfg, "strategy_mode", "copy") == "ai" or wallet_address == "AI_TRADE"
+    if not is_ai and cfg.only_wallets and wallet_address not in cfg.only_wallets:
         reasons.append("Cüzdan seçili kopyalama listesinde değil")
-    if wallet_score < cfg.min_wallet_score:
+    if not is_ai and wallet_score < cfg.min_wallet_score:
         reasons.append(f"Cüzdan puanı < {cfg.min_wallet_score}")
     min_token = effective_min_token_score(cfg)
     if min_token > 0 and token_score < min_token:

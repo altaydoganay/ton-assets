@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     app_name: str = "Pump.fun Cüzdan Analizcisi"
     # SÜRÜM/BUILD numarası — her anlamlı güncellemede artar. Panelin üst barında
     # ve /health'te gösterilir; deploy'un doğru kodu aldığını buradan doğrularsın.
-    app_build: str = "39"
-    app_build_label: str = "imkânsız PnL düzeltmesi — giriş fiyatı piyasayla doğrulanır + likidite tavanı"
+    app_build: str = "73"
+    app_build_label: str = "visible pumpportal health logs"
     environment: Literal["development", "production", "test"] = "development"
     api_prefix: str = "/api"
     secret_key: str = Field(default="degistir-bu-anahtari", description="Uygulama imza anahtarı")
@@ -53,14 +53,14 @@ class Settings(BaseSettings):
     helius_rpc_url: str = ""
     helius_ws_url: str = ""  # boşsa api-key'den üretilir
     # Canlı dinleyici sağlayıcısı: "helius" (ücretsiz, SOL yakmaz) | "pumpportal"
-    listener_provider: str = "helius"
+    listener_provider: str = "auto"
     # RPC hız limiti koruması: istekler arası asgari süre (sn) ve 429 tekrar sayısı.
     # Helius ücretsiz katman ~10 istek/sn; 0.12 ≈ 8 istek/sn güvenli.
     # NOT: Bu throttle yalnızca arka plan KEŞİF analizinde uygulanır; canlı alım
     # yolunda (hız kritik) throttle KAPALIDIR.
     # Developer planı 50 RPS; 0.04 ≈ 25 istek/sn güvenli ve hızlı.
-    rpc_min_interval_seconds: float = 0.04
-    rpc_rate_limit_retries: int = 6
+    rpc_min_interval_seconds: float = 0.01
+    rpc_rate_limit_retries: int = 8
     # Canlı alımda token analizi önbelleği: token bu süre içinde puanlandıysa
     # yeniden analiz edilmez (anında karar = düşük gecikme).
     token_score_cache_seconds: int = 45
@@ -77,6 +77,8 @@ class Settings(BaseSettings):
     # Boş bırakılırsa canlı işlem devre dışı kalır.
     keystore_passphrase: str = ""
     keystore_path: str = "./data/keystore.json"
+    # Panelde gerçek cüzdan portföyünü okumak için public adres. Özel anahtar değil.
+    trading_wallet_address: str = ""
 
     # --- İşlem modu ---
     # "paper" | "alerts_only" | "live"
@@ -92,6 +94,9 @@ class Settings(BaseSettings):
     pumpportal_default_pool: str = "auto"     # pump | pumpswap | auto
     # Canlı olay akışı dinleyicisi açık mı (listener servisi)
     live_listener_enabled: bool = True
+    # PumpPortal WS bazen bağlı görünürken event akışı sessiz kalabilir.
+    # Bu süre boyunca hiç ham mesaj gelmezse bağlantı kontrollü kapatılıp yeniden kurulur.
+    pumpportal_idle_reconnect_seconds: int = 90
 
     # --- Otomatik cüzdan keşfi ---
     # Canlı akıştan (yeni token -> o tokenin alıcıları) aday cüzdan toplama.
@@ -103,10 +108,19 @@ class Settings(BaseSettings):
     # GENİŞ AĞ (paper aşaması): 1 = her alıcıyı aday yap (daha çok cüzdan; kaliteyi
     # otomatik eleme + kopya performansı temizler). Canlıya geçerken 2'ye çıkarılabilir.
     discovery_min_token_hits: int = 1
-    # Aynı anda izlenen (trade aboneliği açık) maksimum token sayısı
-    discovery_max_watched_tokens: int = 120
+    # Aynı anda izlenen (trade aboneliği açık) maksimum token sayısı.
+    # AI modunda yeni token kaçırmamak için daha yüksek tutulur; eski tokenlar
+    # yaş penceresi dolunca otomatik abonelikten çıkarılır.
+    discovery_max_watched_tokens: int = 1500
+    # AI canlı token akışını kaçırmamak için PumpPortal mesajları event-loop'u
+    # kilitlemeden kuyrukla işlenir. Çok düşük değer yeni token kaçırır; çok
+    # yüksek değer gecikmiş sinyalleri biriktirir.
+    ai_signal_workers: int = 8
+    ai_signal_queue_size: int = 5000
+    ai_signal_token_cooldown_seconds: float = 1.5
+    ai_signal_drop_if_older_seconds: int = 25
     # Her arka plan döngüsünde analiz edilecek aday sayısı (geniş ağ için yüksek).
-    discovery_batch_size: int = 8
+    discovery_batch_size: int = 25
     # Aday analizinde taranacak işlem sayısı (DERİNLİK). Helius Enhanced
     # Transactions ile 100'er işlem TEK istekte gelir; bu yüzden derin geçmiş
     # (150) ucuzdur ve "8 kapalı pozisyon / 4 farklı token" eleme kriterlerinin
@@ -114,24 +128,29 @@ class Settings(BaseSettings):
     # bu değer imza-başına çağrı demektir (Helius dışı sağlayıcıda küçült).
     discovery_ingest_limit: int = 150
     # Aday analiz döngüsü aralığı (saniye) — Celery beat. Geniş ağ için sık tara.
-    discovery_interval_seconds: int = 120
+    discovery_interval_seconds: int = 15
     # Helius keşfinde dakikada en fazla kaç işlem detayı çekilsin. Geniş ağ
     # (paper aşaması) için yüksek: daha çok cüzdan keşfet/analiz et. Canlıya
     # geçerken bütçeyi korumak için düşürülebilir.
     # Bu, keşif `getTransaction` kredisinin ana kalemidir; bütçeye göre ayarla.
-    discovery_max_lookups_per_min: int = 20
+    discovery_max_lookups_per_min: int = 120
 
     # --- Takip edilen cüzdan izleme (poll) ---
     # Canlı WS dinleyicisi olay kaçırabildiğinden, takip edilen cüzdanların taze
     # alımları periyodik POLL ile de yakalanır (işlem tetikleyici güvencesi).
     # UCUZ yol: cüzdan başına getSignaturesForAddress (~1 kredi) + yalnızca taze/yeni
     # imza için getTransaction (~1 kredi). Boştaki cüzdan döngü başına ~1 kredi.
-    tracked_poll_seconds: int = 60            # poll döngü aralığı (sn)
-    tracked_poll_per_wallet: int = 6          # her cüzdandan çekilecek son imza sayısı
-    tracked_poll_fresh_seconds: int = 900     # yalnızca son N sn içindeki alımlar işlenir
+    tracked_poll_seconds: int = 5             # poll döngü aralığı (sn)
+    tracked_poll_per_wallet: int = 12         # her cüzdandan çekilecek son imza sayısı
+    tracked_poll_fresh_seconds: int = 1200    # yalnızca son N sn içindeki alımlar işlenir
     # Bir poll döngüsünde en fazla kaç takip cüzdanı taransın. Geniş ağda yüzlerce
     # cüzdan olabilir; en yüksek puanlılar önce taranır (öncelik). Bütçe koruması.
-    tracked_poll_max_wallets: int = 150
+    tracked_poll_max_wallets: int = 1000
+
+    # --- Lider elde tutma bekçisi ---
+    # Açık copy pozisyonlarında lider tokenı hâlâ tutuyor mu periyodik kontrol eder.
+    # SELL olayı kaçarsa bizim pozisyonu acil kapatmak için güvenlik ağıdır.
+    leader_hold_watch_seconds: int = 10
 
     # --- Eşikler (varsayılan; veritabanındaki settings tablosu önceliklidir) ---
     min_wallet_score: float = 70.0

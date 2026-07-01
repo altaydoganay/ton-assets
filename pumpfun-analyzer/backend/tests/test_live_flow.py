@@ -142,6 +142,8 @@ def test_live_mode_uses_signer(db):
         def __init__(self): self.calls = []
         def submit_buy(self, mint, amt, price, max_slippage=0.15, priority_fee_sol=0.0005):
             self.calls.append((mint, amt)); return "livesig1"
+        def submit_sell(self, mint, fraction, price, max_slippage=0.15, priority_fee_sol=0.0005):
+            self.calls.append((mint, fraction)); return "sellsig1"
 
     signer = FakeSigner()
     res = handle_trade_event(db, _trade(w.address, sig="liveevt"), chain=FakeChain(), market=FakeMarket(),
@@ -152,3 +154,65 @@ def test_live_mode_uses_signer(db):
     from app.models import LiveTrade
     lt = db.query(LiveTrade).filter(LiveTrade.source_signature == "liveevt").first()
     assert lt is not None and lt.signature == "livesig1" and lt.status == "submitted"
+
+
+def test_live_mode_mirrors_leader_sell(db):
+    w = _make_tracked_wallet(db, addr="LeaderLiveSell44444444444444444444444444444")
+    set_setting(db, "risk", {"enabled": True, "mode": "live", "live_confirmed": True,
+                             "fixed_sol_amount": 0.01, "max_position_sol": 0.01,
+                             "max_daily_spend_sol": 0.10, "max_daily_loss_sol": 0.03,
+                             "min_liquidity_sol": 5, "min_wallet_score": 0, "min_token_score": 0,
+                             "max_open_positions_per_token": 1})
+    reset_engine()
+
+    class FakeSigner:
+        def __init__(self): self.buys = []; self.sells = []
+        def submit_buy(self, mint, amt, price, max_slippage=0.15, priority_fee_sol=0.0005):
+            self.buys.append((mint, amt, price)); return "live-buy-sig"
+        def submit_sell(self, mint, fraction, price, max_slippage=0.15, priority_fee_sol=0.0005):
+            self.sells.append((mint, fraction, price)); return "live-sell-sig"
+
+    signer = FakeSigner()
+    mint = "LiveMirrorSellMint111111111111111111111111"
+    buy = handle_trade_event(db, _trade(w.address, mint=mint, side="buy", sig="livebuy1"),
+                             chain=FakeChain(), market=FakeMarket(), notifier=TelegramNotifier(), signer=signer)
+    assert buy["traded"] is True
+    sell = handle_trade_event(db, _trade(w.address, mint=mint, side="sell", sig="livesell1"),
+                              chain=FakeChain(), market=FakeMarket(), notifier=TelegramNotifier(), signer=signer)
+    assert sell["action"] == "mirror_sell"
+    assert sell["traded"] is True
+    assert len(signer.sells) == 1
+    from app.models import LiveTrade
+    row = db.query(LiveTrade).filter(LiveTrade.source_signature == "livesell1", LiveTrade.side == "sell").first()
+    assert row is not None and row.signature == "live-sell-sig" and row.status == "submitted"
+
+
+def test_live_mode_blocks_fast_sniper_wallet(db):
+    w = _make_tracked_wallet(db, addr="LeaderFastScalper444444444444444444444444")
+    w.metrics = {
+        "closed_positions": 12,
+        "median_hold_seconds": 45,
+        "short_hold_ratio": 0.9,
+        "copy_sample_size": 8,
+        "copyability_score": 82,
+        "copy_pnl_10s_sol": 0.1,
+    }
+    db.commit()
+    set_setting(db, "risk", {"enabled": True, "mode": "live", "live_confirmed": True,
+                             "fixed_sol_amount": 0.01, "max_position_sol": 0.01,
+                             "max_daily_spend_sol": 0.10, "max_daily_loss_sol": 0.03,
+                             "min_wallet_score": 0, "min_token_score": 0,
+                             "block_sniper_wallets_live": True,
+                             "live_min_median_hold_seconds": 300,
+                             "live_max_short_hold_ratio": 0.55})
+    reset_engine()
+
+    class FakeSigner:
+        def submit_buy(self, *args, **kwargs):
+            raise AssertionError("sniper wallet should be blocked before live buy")
+
+    res = handle_trade_event(db, _trade(w.address, sig="fastsniper1"),
+                             chain=FakeChain(), market=FakeMarket(),
+                             notifier=TelegramNotifier(), signer=FakeSigner())
+    assert res["action"] == "skipped"
+    assert "Canlı blok" in res["reason"]

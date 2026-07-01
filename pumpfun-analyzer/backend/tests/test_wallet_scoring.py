@@ -59,6 +59,14 @@ def test_insufficient_sample_not_eligible():
     assert len(res.eligibility_failures) > 0
 
 
+def test_short_history_does_not_fail_by_itself():
+    perf = compute_performance(_build_good_swaps())
+    signals = WalletSignals(history_days=0.05, days_since_last_trade=1, transfer_noise_ratio=0.05)
+    res = score_wallet(perf, signals)
+    assert res.eligible is True
+    assert not any("Geçmiş <" in f for f in res.eligibility_failures)
+
+
 def test_idle_wallet_not_eligible():
     """Aktif cüzdana öncelik: uzun süredir işlem yapmamış cüzdan takibe alınmaz."""
     perf = compute_performance(_build_good_swaps())

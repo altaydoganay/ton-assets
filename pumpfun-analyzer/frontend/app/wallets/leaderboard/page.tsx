@@ -21,6 +21,15 @@ function timeAgo(iso: string): string {
 }
 
 const COLS: { key: string; label: string; fmt?: (v: any, r?: Row) => string; right?: boolean }[] = [
+  { key: "copyability_score", label: "Copy Score", fmt: (v) => (v != null ? Math.round(v).toString() : "—") },
+  { key: "copy_pnl_10s_sol", label: "10s Copy PnL", right: true, fmt: (v) => (v != null ? Number(v).toFixed(4) : "—") },
+  { key: "copy_pnl_30s_sol", label: "30s Copy PnL", right: true, fmt: (v) => (v != null ? Number(v).toFixed(4) : "—") },
+  { key: "avg_entry_jump_10s", label: "Entry Jump 10s", fmt: (v) => (v != null ? `%${Math.round(Number(v) * 100)}` : "—") },
+  { key: "copy_profit_factor_10s", label: "Copy PF 10s", fmt: (v) => (v != null ? Number(v).toFixed(2) : "∞/—") },
+  { key: "copy_coverage_ratio", label: "Coverage", fmt: (v) => (v != null ? `%${Math.round(Number(v) * 100)}` : "—") },
+  { key: "copy_sample_size", label: "Copy Sample", fmt: (v) => v ?? "—" },
+  { key: "related_tracked_wallet_count", label: "Bağlı Takip", fmt: (v) => v ?? 0 },
+  { key: "related_known_wallet_count", label: "Bağlı Bilinen", fmt: (v) => v ?? 0 },
   { key: "score", label: "Puan", fmt: (v) => (v != null ? Math.round(v).toString() : "—") },
   { key: "win_rate", label: "Başarı", fmt: (v) => (v != null ? `%${Math.round(v * 100)}` : "—") },
   { key: "realized_pnl_sol", label: "Lider PnL (SOL)", right: true, fmt: (v) => (v != null ? Number(v).toFixed(3) : "—") },
@@ -34,7 +43,8 @@ const COLS: { key: string; label: string; fmt?: (v: any, r?: Row) => string; rig
 export default function Leaderboard() {
   const { data, mutate } = useSWR<Row[]>("/wallets/leaderboard", fetcher, { refreshInterval: 30000 });
   const { data: backlog, mutate: mutBacklog } = useSWR<any>("/setup/backlog", fetcher, { refreshInterval: 15000 });
-  const [sortKey, setSortKey] = useState("score");
+  const { data: rebuildStatus, mutate: mutRebuild } = useSWR<any>("/wallets/quality-rebuild/status", fetcher, { refreshInterval: 2000 });
+  const [sortKey, setSortKey] = useState("copyability_score");
   const [dir, setDir] = useState<1 | -1>(-1);
   const [scanning, setScanning] = useState(false);
   const [draining, setDraining] = useState(false);
@@ -44,10 +54,13 @@ export default function Leaderboard() {
   const isRunning = !!drain?.running;
   const [autoBusy, setAutoBusy] = useState(false);
   const [culling, setCulling] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
+  const rebuildLoopRef = useRef(false);
   const { confirm, dialog } = useConfirm();
+  const rebuildRunning = rebuilding || rebuildStatus?.status === "running";
 
-  async function cull(preset: "strict" | "balanced" | "light") {
-    const names: any = { strict: "Sıkı", balanced: "Dengeli", light: "Hafif" };
+  async function cull(preset: "elite" | "strict" | "balanced" | "light") {
+    const names: any = { elite: "Elite", strict: "Sıkı", balanced: "Dengeli", light: "Hafif" };
     setCulling(true);
     try {
       const prev: any = await apiSend(`/wallets/cull?preset=${preset}&dry_run=true`, "POST");
@@ -57,7 +70,7 @@ export default function Leaderboard() {
       const ok = await confirm({
         title: `Eleme önizleme — ${names[preset]}`,
         body: `${prev.tracked_before} takip cüzdanından ${prev.kept} KALIR, ${prev.dropped} elenir ` +
-              `(${prev.dropped_quality} kalite + ${prev.dropped_cap} üst sınır). Düşenler "below_threshold"a alınır ` +
+              `(${prev.dropped_quality} kalite + ${prev.dropped_relationship ?? 0} cüzdan bağı + ${prev.dropped_cap} üst sınır). Düşenler "below_threshold"a alınır ` +
               `(silinmez, toparlarsa geri döner). Takip barı skor ${prev.criteria.min_score || "—"}'e yükseltilir VE ` +
               `kalıcı ÜST SINIR ${capTxt} olur — böylece keşif akışı sayıyı geri şişirmez. Uygulansın mı?`,
         confirmText: "Evet, ele", danger: true,
@@ -69,6 +82,71 @@ export default function Leaderboard() {
     } catch (e: any) { toast("error", e?.message || "Eleme başarısız"); }
     finally { setCulling(false); }
   }
+
+  async function runRebuildLoop(initial?: any) {
+    if (rebuildLoopRef.current) return;
+    rebuildLoopRef.current = true;
+    setRebuilding(true);
+    try {
+      let r: any = initial || rebuildStatus;
+      let guard = 0;
+      while (r?.status === "running" && guard < 2000) {
+        guard += 1;
+        r = await apiSend("/wallets/quality-rebuild/step?batch_size=250&budget_seconds=12&scan_transfers=false", "POST");
+        await mutRebuild(r, false);
+        if (guard % 2 === 0) await mutate();
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      await mutate();
+      if (r?.status === "done") {
+        const tracked = r?.tracked_now ?? r?.cull?.kept ?? 0;
+        toast("success", `Elite rebuild bitti: ${r.processed ?? 0}/${r.total ?? 0} cüzdan işlendi, ${tracked} cüzdan takipte kaldı.`);
+      }
+    } catch (e: any) {
+      toast("error", e?.message || "Elite rebuild durdu");
+    } finally {
+      rebuildLoopRef.current = false;
+      setRebuilding(false);
+      await mutRebuild();
+    }
+  }
+
+  async function cancelRebuild() {
+    try {
+      const r: any = await apiSend("/wallets/quality-rebuild/cancel", "POST");
+      await mutRebuild(r, false);
+      toast("info", "Elite rebuild iptal edildi. Tekrar başlatabilirsin.");
+    } catch (e: any) {
+      toast("error", e?.message || "İptal edilemedi");
+    }
+  }
+
+  async function qualityRebuild() {
+    const ok = await confirm({
+      title: "Takip listesini sıfırla ve Elite filtrele",
+      body: "Mevcut takip cüzdanları işlem listesinden çıkarılacak, DB'de kayıtlı cüzdanlar 10sn copyability ağırlıklı elite kriterlerle hızlı modda yeniden puanlanacak. Derin transfer bağı taraması bu akışta yapılmaz; daha önce ingestion/backlog ile kaydedilmiş bağlar yine dikkate alınır. Silme yapılmaz; uymayanlar below_threshold olur. Uygulansın mı?",
+      confirmText: "Evet, yeniden kur",
+      danger: true,
+    });
+    if (!ok) return;
+    setRebuilding(true);
+    try {
+      const r: any = await apiSend("/wallets/quality-rebuild/start?preset=elite", "POST");
+      await mutRebuild(r, false);
+      toast("info", `Elite rebuild başladı: ${r.tracked_reset ?? 0} takip sıfırlandı, ${r.total ?? 0} cüzdan hızlı modda yeniden puanlanacak.`);
+      await runRebuildLoop(r);
+    } catch (e: any) {
+      toast("error", e?.message || "Elite rebuild başlatılamadı");
+      setRebuilding(false);
+    }
+  }
+
+  useEffect(() => {
+    if (rebuildStatus?.status === "running" && !rebuilding && !rebuildLoopRef.current) {
+      runRebuildLoop(rebuildStatus);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rebuildStatus?.status]);
 
   async function toggleAuto(next: boolean) {
     setAutoBusy(true);
@@ -135,8 +213,8 @@ export default function Leaderboard() {
   });
   // Podyum: en çok KAZANDIRAN ilk 3 (sıralamadan bağımsız)
   const podium = [...data]
-    .filter((w) => (w.closed_trades ?? 0) > 0)
-    .sort((a, b) => (b.realized_pnl_sol ?? -Infinity) - (a.realized_pnl_sol ?? -Infinity))
+    .filter((w) => (w.closed_positions ?? 0) > 0)
+    .sort((a, b) => (b.copyability_score ?? -Infinity) - (a.copyability_score ?? -Infinity))
     .slice(0, 3);
   function sortBy(k: string) {
     if (k === sortKey) setDir((d) => (d === 1 ? -1 : 1));
@@ -150,7 +228,7 @@ export default function Leaderboard() {
     <div>
       {dialog}
       <PageHeader title="Cüzdan Sıralaması" icon={<Trophy size={22} />}
-        subtitle="Takip ettiğimiz cüzdanların KENDİ al-sat performansı. Başlıklara tıklayıp sırala — kim ne kadar kazanıyor net gör."
+        subtitle="Lider performansı + 0.01 SOL gecikmeli copy simülasyonu. Ana karar 10 saniye gecikmeli kopyada kâr kalıyor mu?"
         action={
           <button className="btn" onClick={rescan} disabled={scanning} title="Mevcut cüzdanları yeni kriterlerle yeniden puanlar (kredi harcamaz)">
             <RefreshCw size={15} className={scanning ? "animate-spin" : ""} />
@@ -165,17 +243,69 @@ export default function Leaderboard() {
             <div>
               <div className="flex items-center gap-2 font-semibold"><Filter size={16} className="brand" /> Cüzdanları Ele</div>
               <p className="text-xs muted mt-1 max-w-xl">
-                Aktiflik + kârlılık (profit factor & PnL) + örneklem/çeşitlilik + skora göre süzer.
+                Aktiflik + 10sn copy PnL + copyability score + örneklem/çeşitlilik + skora göre süzer.
                 Önce <b>önizleme</b> gösterir (kaç kalır/elenir), onaylarsan uygular. Düşenler silinmez,
                 "below_threshold"a alınır; takip barı yükseltilir ki <b>kalıcı</b> olsun.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button className="btn-danger" disabled={culling} onClick={() => cull("strict")} title="En iyi ~150 (aktif, PF≥1.3, ≥10 kapanış, ≥5 token, skor≥68)">Sıkı (~150)</button>
-              <button className="btn" disabled={culling} onClick={() => cull("balanced")} title="~250-300 (aktif, PF≥1.1, ≥6 kapanış, ≥3 token, skor≥62)">Dengeli</button>
-              <button className="btn-ghost" disabled={culling} onClick={() => cull("light")} title="Sadece uyuyan/zarar eden">Hafif</button>
+              <button className="btn-danger" disabled={rebuildRunning} onClick={qualityRebuild}
+                title="Takip listesini sıfırlar, elite copyability politikasını uygular ve kayıtlı veriden yeniden seçer">
+                {rebuildRunning ? `Kuruluyor… %${Math.round(rebuildStatus?.percent ?? 0)}` : "Sıfırla + Elite Rebuild"}
+              </button>
+              <button className="btn-danger" disabled={culling || rebuildRunning} onClick={() => cull("elite")} title="En iyi ~50: 10sn copy PnL pozitif, copy score≥60, PF≥1.25, entry jump≤%20">Elite (~50)</button>
+              <button className="btn-danger" disabled={culling || rebuildRunning} onClick={() => cull("strict")} title="En iyi ~150 (aktif, PF≥1.3, ≥10 kapanış, ≥5 token, skor≥68)">Sıkı (~150)</button>
+              <button className="btn" disabled={culling || rebuildRunning} onClick={() => cull("balanced")} title="~250-300 (aktif, PF≥1.1, ≥6 kapanış, ≥3 token, skor≥62)">Dengeli</button>
+              <button className="btn-ghost" disabled={culling || rebuildRunning} onClick={() => cull("light")} title="Sadece uyuyan/zarar eden">Hafif</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {rebuildStatus?.status && (
+        <div className="card mb-4" style={{ borderColor: rebuildStatus.status === "running" ? "var(--amber)" : "var(--emerald)" }}>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="font-semibold">
+                {rebuildStatus.status === "running" ? "Elite rebuild çalışıyor" : "Son elite rebuild sonucu"}
+              </div>
+              <p className="text-xs muted">
+                {Number(rebuildStatus.processed ?? 0).toLocaleString("tr-TR")} / {Number(rebuildStatus.total ?? 0).toLocaleString("tr-TR")} cüzdan işlendi
+                {" · "}kalan {Number(rebuildStatus.remaining ?? 0).toLocaleString("tr-TR")}
+                {" · "}şu an takipte {Number(rebuildStatus.tracked_now ?? 0).toLocaleString("tr-TR")}
+              </p>
+              {rebuildStatus.last_step && (
+                <p className="text-[11px] muted mt-1">
+                  Son batch: {rebuildStatus.last_step.scanned ?? 0} işlendi
+                  {" · "}mod: {rebuildStatus.last_step.transfer_scan_mode === "deep" ? "derin ilişki tarama" : "hızlı"}
+                  {rebuildStatus.stalled_seconds != null ? ` · son hareket ${Math.round(Number(rebuildStatus.stalled_seconds) / 60)} dk önce` : ""}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-col items-end gap-2 text-right text-sm font-bold">
+              <div>%{Math.round(rebuildStatus.percent ?? 0)}</div>
+              {rebuildStatus.status === "running" && (
+                <div className="flex gap-2">
+                  <button className="btn-ghost text-xs" onClick={() => runRebuildLoop(rebuildStatus)}>Devam ettir</button>
+                  <button className="btn-ghost text-xs" onClick={cancelRebuild}>İptal / kilidi aç</button>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="h-3 overflow-hidden rounded-full" style={{ background: "var(--bg2)" }}>
+            <div
+              className="h-full transition-all"
+              style={{
+                width: `${Math.max(0, Math.min(100, Number(rebuildStatus.percent ?? 0)))}%`,
+                background: rebuildStatus.status === "running" ? "var(--amber)" : "var(--emerald)",
+              }}
+            />
+          </div>
+          {rebuildStatus.cull && (
+            <p className="mt-2 text-xs muted">
+              Final eleme: {rebuildStatus.cull.kept} kaldı, {rebuildStatus.cull.dropped} elendi.
+            </p>
+          )}
         </div>
       )}
 
@@ -197,10 +327,10 @@ export default function Leaderboard() {
                   <Ico size={20} />
                 </div>
                 <div className="font-mono text-xs font-semibold">{w.label || shortAddr(w.address)}</div>
-                <div className="mt-1 text-lg font-black" style={{ color: w.realized_pnl_sol >= 0 ? "var(--emerald)" : "var(--rose)" }}>
-                  <CountUp value={w.realized_pnl_sol ?? 0} decimals={3} signed suffix=" ◎" />
+                <div className="mt-1 text-lg font-black" style={{ color: (w.copy_pnl_10s_sol ?? 0) >= 0 ? "var(--emerald)" : "var(--rose)" }}>
+                  <CountUp value={w.copy_pnl_10s_sol ?? 0} decimals={4} signed suffix=" ◎" />
                 </div>
-                <div className="mt-0.5 text-[11px] muted">Puan {Math.round(w.score ?? 0)} · %{Math.round((w.win_rate || 0) * 100)} başarı</div>
+                <div className="mt-0.5 text-[11px] muted">Copy {Math.round(w.copyability_score ?? 0)} · Puan {Math.round(w.score ?? 0)}</div>
               </Link>
             );
           })}
@@ -279,7 +409,7 @@ export default function Leaderboard() {
                   </td>
                   {COLS.map((c) => (
                     <td key={c.key} className={c.right ? "text-right" : ""}
-                      style={c.key === "realized_pnl_sol" && r[c.key] != null ? { color: r[c.key] >= 0 ? "var(--emerald)" : "var(--rose)", fontWeight: 600 } : {}}>
+                      style={(c.key === "realized_pnl_sol" || c.key === "copy_pnl_10s_sol" || c.key === "copy_pnl_30s_sol") && r[c.key] != null ? { color: r[c.key] >= 0 ? "var(--emerald)" : "var(--rose)", fontWeight: 600 } : {}}>
                       {c.fmt ? c.fmt(r[c.key], r) : r[c.key]}
                     </td>
                   ))}

@@ -31,8 +31,14 @@ class DexScreenerAdapter(MarketProvider):
             # En yüksek likiditeli çifti seç.
             best = max(pairs, key=lambda p: (p.get("liquidity") or {}).get("usd", 0) or 0)
             liq = (best.get("liquidity") or {})
+            base = best.get("baseToken") or {}
+            info = best.get("info") or {}
             return TokenMarketData(
                 mint=mint,
+                name=base.get("name"),
+                symbol=base.get("symbol"),
+                image_url=info.get("imageUrl"),
+                pair_url=best.get("url"),
                 price_usd=_f(best.get("priceUsd")),
                 price_sol=_f(best.get("priceNative")),
                 liquidity_usd=_f(liq.get("usd")),

@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Check, Copy, AlertTriangle } from "lucide-react";
+import { Check, Copy, AlertTriangle, HelpCircle } from "lucide-react";
 
 export function StatCard({
   label, value, hint, accent, tone, icon,
@@ -63,6 +63,32 @@ export function Section({ title, action, children }: { title: string; action?: R
       </div>
       {children}
     </div>
+  );
+}
+
+export function InfoTip({ title, children }: { title?: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-flex align-middle">
+      <button
+        type="button"
+        className="ml-1 inline-grid h-5 w-5 place-items-center rounded-full border text-[11px] font-bold muted hover:text-brand"
+        style={{ borderColor: "var(--border)", background: "var(--bg2)" }}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(!open); }}
+        title="Açıklama"
+      >
+        <HelpCircle size={13} />
+      </button>
+      {open && (
+        <span
+          className="absolute left-0 top-6 z-50 w-72 rounded-xl border p-3 text-left text-xs shadow-xl"
+          style={{ background: "var(--card)", borderColor: "var(--border)", color: "var(--fg)" }}
+        >
+          {title && <b className="mb-1 block text-sm">{title}</b>}
+          <span className="leading-relaxed muted">{children}</span>
+        </span>
+      )}
+    </span>
   );
 }
 

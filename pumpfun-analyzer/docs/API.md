@@ -32,6 +32,8 @@ Tüm yanıtlar JSON'dur.
 | GET | `/api/trading/paper` | Paper işlemler |
 | GET | `/api/trading/live` | Canlı işlemler |
 | GET | `/api/trading/positions` | Açık pozisyonlar |
+| GET | `/api/trading/ai-center` | AI Decision Center: neden aldı/almadı, paper performans, exit sebepleri |
+| GET | `/api/trading/decision-funnel` | Karar hunisi: blok/alım sebepleri |
 | POST | `/api/trading/emergency-stop?close_positions=bool` | Acil durdurma |
 
 ## Ayarlar / Sistem

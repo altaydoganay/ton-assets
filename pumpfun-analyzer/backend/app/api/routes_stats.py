@@ -5,12 +5,12 @@ import csv
 import io
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import AuditLog, PaperTrade, Token, Wallet
+from ..models import AuditLog, LiveTrade, PaperTrade, Token, Wallet
 from ..services import stats_service
 from ..services.setup_service import setup_status
 from ..services.settings_service import RISK_PROFILES, apply_risk_profile, set_runtime_flag
@@ -51,6 +51,53 @@ def positions(db: Session = Depends(get_db)):
     return stats_service.open_positions(db, market=market)
 
 
+@stats_router.get("/wallet-portfolio")
+def wallet_portfolio(
+    response: Response,
+    address: str | None = Query(None),
+    fresh: bool = Query(True),
+    history_fallback: bool = Query(False),
+    das_balance: bool = Query(False),
+    _: int | None = Query(None, alias="_"),
+):
+    """Gerçek trading cüzdanı portföyü.
+
+    Bu veri DB'deki trade kayıtlarından değil, doğrudan Solana RPC'den gelir.
+    Paneldeki açık pozisyon defteriyle uyuşmazsa gerçek cüzdan snapshot'ı referans
+    kabul edilmelidir.
+    """
+    from ..adapters.registry import build_chain_provider, build_market_provider
+    from ..services.wallet_portfolio import fetch_wallet_portfolio, resolve_trading_wallet_address
+
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    resolved, source = (address, "query") if address else resolve_trading_wallet_address()
+    if not resolved:
+        raise HTTPException(
+            400,
+            "Portföy adresi bulunamadı. .env içine TRADING_WALLET_ADDRESS=<public wallet> ekle veya ?address= ile ver.",
+        )
+    try:
+        chain = build_chain_provider(throttle=False)
+        try:
+            market = build_market_provider()
+        except Exception:  # noqa: BLE001
+            market = None
+        out = fetch_wallet_portfolio(
+            chain,
+            market,
+            resolved,
+            commitment="processed" if fresh else "confirmed",
+            include_history_fallback=history_fallback,
+            include_das_balances=das_balance,
+        )
+        out["address_source"] = source
+        return out
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(503, f"Cüzdan portföyü okunamadı: {str(exc)[:180]}")
+
+
 # --- Kurulum / sağlık ---
 @setup_router.get("")
 def setup(db: Session = Depends(get_db)):
@@ -81,6 +128,7 @@ def live_setup(db: Session = Depends(get_db)):
         "pumpportal_key": pumpportal,
         "keystore_exists": keystore_addr is not None,
         "keystore_address": keystore_addr,
+        "trading_wallet_address": _s.trading_wallet_address or keystore_addr,
         "mode": mode,
         "engine_enabled": engine_on,
         "live_confirmed": live_confirmed,
@@ -127,14 +175,14 @@ def backlog_status(db: Session = Depends(get_db)):
         "pending": pending,
         "est_credits": pending * 10,  # kaba tahmin: ~1 Enhanced isteği/cüzdan
         "last_drain": get_setting(db, "_meta_backlog_drain"),
-        "autodrain": get_runtime_flag(db, "backlog_autodrain", False),
+        "autodrain": get_runtime_flag(db, "backlog_autodrain", True),
     }
 
 
 @setup_router.post("/backlog/autodrain")
 def toggle_autodrain(enabled: bool = Query(...), db: Session = Depends(get_db)):
     """Otomatik backlog analizi (sürekli, arka planda) aç/kapat. Açıkken her beat
-    tikinde (~2 dk) zaman bütçesi kadar çok cüzdan analiz edilir → backlog hızlı
+    tikinde sık aralıklarla zaman bütçesi kadar çok cüzdan analiz edilir → backlog hızlı
     ve GÖRÜNÜR şekilde erir. KREDİ HARCAR; bitince ya da kredi azalınca kapat.
     Beat tabanlı: deploy/restart'a dayanıklı (kaldığı yerden sürer)."""
     from ..services.settings_service import set_runtime_flag
@@ -188,7 +236,11 @@ def apply_profile(name: str, db: Session = Depends(get_db)):
 @stats_router.post("/positions/{mint}/close")
 def close_position(mint: str, price_sol: float = Query(...), db: Session = Depends(get_db)):
     """Açık paper pozisyonunu verilen fiyattan kapatır (manuel sat)."""
-    positions = {p["token_mint"]: p for p in stats_service.open_positions(db)}
+    positions = {
+        p["token_mint"]: p
+        for p in stats_service.open_positions(db)
+        if p.get("mode", "paper") == "paper"
+    }
     p = positions.get(mint)
     if not p:
         raise HTTPException(404, "Açık paper pozisyonu yok")
@@ -209,16 +261,19 @@ def close_position(mint: str, price_sol: float = Query(...), db: Session = Depen
 @stats_router.post("/positions/{mint}/sell")
 def sell_position(mint: str, fraction: float = Query(1.0, gt=0.0, le=1.0),
                   db: Session = Depends(get_db)):
-    """Açık paper pozisyonunun `fraction` (0-1) kadarını CANLI piyasa fiyatından
-    satar — %50 / %100 düğmeleri için. Fiyatı sen girmezsin; anlık fiyat çekilir."""
+    """Açık paper/live pozisyonunun `fraction` (0-1) kadarını canlı fiyattan satar."""
     from ..adapters.registry import build_market_provider
+    from ..services.settings_service import get_setting
     try:
         market = build_market_provider()
     except Exception:  # noqa: BLE001
         market = None
-    p = {x["token_mint"]: x for x in stats_service.open_positions(db, market=market)}.get(mint)
+    matches = [x for x in stats_service.open_positions(db, market=market) if x["token_mint"] == mint]
+    p = next((x for x in matches if x.get("mode") == "live"), None) or (matches[0] if matches else None)
     if not p:
-        raise HTTPException(404, "Açık paper pozisyonu yok")
+        raise HTTPException(404, "Açık pozisyon yok")
+    if p.get("suspicious_reason") == "unrealistic_unrealized_pnl":
+        raise HTTPException(400, "Pozisyon fiyatı/verisi tutarsız görünüyor — otomatik satış durduruldu")
     price = p.get("current_price_sol")
     if not price:
         raise HTTPException(400, "Canlı fiyat alınamadı — aşağıdaki manuel fiyatla kapatmayı kullan")
@@ -226,6 +281,34 @@ def sell_position(mint: str, fraction: float = Query(1.0, gt=0.0, le=1.0),
     proceeds = qty_sell * float(price)
     cost_part = p["cost_sol"] * fraction
     pnl = proceeds - cost_part
+    if p.get("mode") == "live":
+        from ..adapters.pumpportal import PumpPortalTrader
+        risk = get_setting(db, "risk")
+        row = LiveTrade(
+            wallet_address=p["wallet_address"], token_mint=mint, side="sell",
+            sol_amount=proceeds, token_amount=qty_sell, price_sol=float(price),
+            status="pending", is_open=False, realized_pnl_sol=pnl,
+        )
+        db.add(row); db.commit(); db.refresh(row)
+        try:
+            sig = PumpPortalTrader().submit_sell(
+                mint, fraction, float(price),
+                max_slippage=float(risk.get("max_slippage", 0.15)),
+                priority_fee_sol=float(risk.get("priority_fee_sol", 0.0005)),
+            )
+            row.signature = sig
+            row.status = "submitted"
+        except Exception as exc:  # noqa: BLE001
+            row.status = "failed"
+            row.error = str(exc)[:240]
+            db.commit()
+            raise HTTPException(400, f"Canlı satış gönderilemedi: {str(exc)[:160]}")
+        db.add(AuditLog(level="warning", category="trading",
+                        message=f"CANLI pozisyon manuel %{int(round(fraction*100))} satıldı: {mint}"))
+        db.commit()
+        return {"sold": mint, "mode": "live", "fraction": fraction, "qty": round(qty_sell, 2),
+                "price_sol": float(price), "realized_pnl_sol": round(pnl, 4),
+                "signature": row.signature}
     db.add(PaperTrade(
         wallet_address=p["wallet_address"], token_mint=mint, side="sell",
         sol_amount=proceeds, token_amount=qty_sell, price_sol=float(price), fee_sol=0.0,
@@ -234,7 +317,7 @@ def sell_position(mint: str, fraction: float = Query(1.0, gt=0.0, le=1.0),
     db.add(AuditLog(level="info", category="trading",
                     message=f"Paper pozisyon %{int(round(fraction*100))} satıldı: {mint} · PnL {pnl:+.4f} SOL"))
     db.commit()
-    return {"sold": mint, "fraction": fraction, "qty": round(qty_sell, 2),
+    return {"sold": mint, "mode": "paper", "fraction": fraction, "qty": round(qty_sell, 2),
             "price_sol": float(price), "realized_pnl_sol": round(pnl, 4)}
 
 

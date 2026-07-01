@@ -33,6 +33,11 @@ class RateLimitError(RuntimeError):
 # transport: (url, payload) -> response dict
 Transport = Callable[[str, dict[str, Any]], dict[str, Any]]
 
+TOKEN_PROGRAM_IDS = [
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # SPL Token
+    "TokenzQdBNbLqP5VEhdkAS6EPF7uAwBCoNtH9Q2ZcS",   # Token-2022
+]
+
 
 def _httpx_transport(timeout: float = 15.0) -> Transport:
     import httpx
@@ -139,6 +144,60 @@ class SolanaRpcAdapter(ChainProvider):
 
     def get_latest_blockhash(self) -> dict[str, Any] | None:
         return self._rpc("getLatestBlockhash", [{"commitment": "finalized"}])
+
+    def get_balance_sol(self, address: str, commitment: str = "confirmed") -> float:
+        res = self._rpc("getBalance", [address, {"commitment": commitment}])
+        try:
+            return float(res.get("value") or 0) / 1_000_000_000
+        except (AttributeError, TypeError, ValueError):
+            return 0.0
+
+    def get_token_accounts_by_owner(self, owner: str, commitment: str = "confirmed") -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for program_id in TOKEN_PROGRAM_IDS:
+            try:
+                res = self._rpc(
+                    "getTokenAccountsByOwner",
+                    [
+                        owner,
+                        {"programId": program_id},
+                        {"encoding": "jsonParsed", "commitment": commitment},
+                    ],
+                )
+                rows = list(res.get("value") or []) if isinstance(res, dict) else []
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Token account okunamadı (%s): %s", program_id, exc)
+                rows = []
+            for row in rows:
+                pubkey = str(row.get("pubkey") or "")
+                if pubkey and pubkey in seen:
+                    continue
+                if pubkey:
+                    seen.add(pubkey)
+                row["program_id"] = program_id
+                out.append(row)
+        return out
+
+    def get_assets_by_owner(self, owner: str, limit: int = 1000) -> list[dict[str, Any]]:
+        """Helius DAS uyumlu endpoint. Standart RPC'de desteklenmeyebilir."""
+        res = self._rpc(
+            "getAssetsByOwner",
+            [{
+                "ownerAddress": owner,
+                "page": 1,
+                "limit": max(1, min(int(limit), 1000)),
+                "displayOptions": {
+                    "showFungible": True,
+                    "showNativeBalance": False,
+                    "showCollectionMetadata": False,
+                },
+            }],
+        )
+        try:
+            return list(res.get("items") or [])
+        except AttributeError:
+            return []
 
     def get_token_largest_accounts(self, mint: str) -> list[dict[str, Any]]:
         res = self._rpc("getTokenLargestAccounts", [mint])

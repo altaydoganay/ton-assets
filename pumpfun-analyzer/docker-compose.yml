@@ -25,6 +25,7 @@ services:
 
   backend:
     build: ./backend
+    restart: unless-stopped
     # Tek bir backend imajı; worker/beat/listener AYNI imajı paylaşır.
     # Böylece `backend` yeniden kurulunca hepsi güncel kodu alır (stale imaj olmaz).
     image: pumpfun-analyzer-backend
@@ -41,6 +42,7 @@ services:
 
   worker:
     image: pumpfun-analyzer-backend
+    restart: unless-stopped
     # concurrency=2: Helius çağrılarının paralel katlanmasını sınırla (kredi koru).
     command: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=2
     env_file: .env
@@ -52,6 +54,7 @@ services:
 
   beat:
     image: pumpfun-analyzer-backend
+    restart: unless-stopped
     command: celery -A app.workers.celery_app.celery_app beat --loglevel=info
     env_file: .env
     depends_on:
@@ -62,6 +65,7 @@ services:
   # ve takipteki cüzdan işlemlerinde bildirim + (ayar açıksa) kopya işlem yapar.
   listener:
     image: pumpfun-analyzer-backend
+    restart: unless-stopped
     # LISTENER_PROVIDER'a göre Helius (ücretsiz) veya PumpPortal dinleyicisi.
     command: python -m app.workers.run_listener
     env_file: .env
@@ -69,13 +73,15 @@ services:
       - backend
 
   frontend:
+    image: altay-copyability-frontend:73
+    restart: unless-stopped
     build:
       context: ./frontend
       args:
         # BOŞ bırak: panel API'yi aynı kökenden (/api) ister, Next.js backend'e
         # proxy'ler (next.config.js). Telefon/Tailscale dahil her host:porttan çalışır.
         # Yalnızca özel domain/reverse-proxy kullanıyorsan .env'de NEXT_PUBLIC_API_URL ver.
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+        NEXT_PUBLIC_API_URL: ""
     env_file: .env
     depends_on:
       - backend
