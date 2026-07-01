@@ -413,6 +413,36 @@ class PumpPortalListener:
                     ctx,
                 )
             return
+
+        # TRADE ABONELİĞİ TEŞHİSİ (kritik): yeni-token akışı CANLI ama hiç trade
+        # event'i YOK. PumpPortal kuralı: subscribeNewToken anahtarsız çalışır, ama
+        # subscribeTokenTrade/AccountTrade FUNDED API anahtarı (cüzdan ≥0.02 SOL)
+        # ister. Anahtar yoksa/bakiye düşükse yalnız yeni-token gelir → AI hiç token
+        # trade'i görmez, copy gerçek-zamanlı çalışmaz (yalnız yavaş RPC poll kalır).
+        # Bu sessiz starvasyonu "akış aktif" diye göstermek yerine NET uyarıya çeviririz.
+        trade_stream_dead = (
+            len(self.watched_tokens) >= 10       # birçok tokene trade aboneliği yapıldı
+            and self.last_trade_at == 0.0        # ama HİÇ trade event'i gelmedi
+            and new_age >= 0                     # yeni-token akışı ise canlı
+        )
+        if trade_stream_dead:
+            ctx["trade_stream"] = "dead"
+            ctx["hint"] = (
+                "PumpPortal trade aboneliği çalışmıyor: subscribeTokenTrade/AccountTrade "
+                "için funded API anahtarı (cüzdan ≥0.02 SOL) gerekir. Anahtar yok veya "
+                "bakiye düşükse yalnızca yeni-token akışı gelir; AI token trade'i görmez, "
+                "copy gerçek-zamanlı tetiklenmez."
+            )
+            if force or now - self.last_warning_audit_at >= 60:
+                self.last_warning_audit_at = now
+                await self._audit_async(
+                    "warning",
+                    f"Trade akışı YOK — {len(self.watched_tokens)} token izleniyor ama hiç "
+                    f"trade event'i gelmedi. PumpPortal funded API anahtarı (≥0.02 SOL) gerekli "
+                    f"veya bakiyeyi kontrol et.",
+                    ctx,
+                )
+            return
         if force or now - self.last_audit_at >= 60:
             self.last_audit_at = now
             await self._audit_async(

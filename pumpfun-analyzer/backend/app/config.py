@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     app_name: str = "Pump.fun Cüzdan Analizcisi"
     # SÜRÜM/BUILD numarası — her anlamlı güncellemede artar. Panelin üst barında
     # ve /health'te gösterilir; deploy'un doğru kodu aldığını buradan doğrularsın.
-    app_build: str = "78"
-    app_build_label: str = "moda duyarlı geç-giriş kapısı — paper copy görünürlüğü (WS/Helius yokken)"
+    app_build: str = "79"
+    app_build_label: str = "trade akışı teşhisi — 'yeni token var ama trade yok' (funded PumpPortal anahtarı) net uyarısı"
     environment: Literal["development", "production", "test"] = "development"
     api_prefix: str = "/api"
     secret_key: str = Field(default="degistir-bu-anahtari", description="Uygulama imza anahtarı")
