@@ -530,6 +530,31 @@ def handle_trade_event(
             return {"action": "skipped", "reason": reason, "strategy": "ai",
                     "wallet": "AI", "token": short_addr(trade.mint), "side": trade.side,
                     "token_score": assessment.total}
+        # SAHİPLİK YOĞUNLAŞMASI (yalnız ÖLÇÜLEBİLİYORSA): top-10 cüzdan / insider
+        # arzın büyük kısmını tutuyorsa tek dump fiyatı sıfırlar — token-bazlı,
+        # cüzdan takibiyle ilgisi yok. Veri yoksa (taze token) engelleme yapılmaz.
+        tok_m = (token.metrics or {})
+        # metrics'te 0-1 kesir olarak saklanır; limitler yüzde → normalize et.
+        def _as_pct(v: float) -> float:
+            return v * 100.0 if 0.0 < v <= 1.0 else v
+        top10 = _as_pct(float(tok_m.get("top10_pct") or 0.0))
+        insider = _as_pct(float(tok_m.get("insider_supply_pct") or 0.0))
+        max_top10 = float(ai_policy.get("ai_max_top10_pct", 0.0) or 0.0)
+        max_insider = float(ai_policy.get("ai_max_insider_pct", 0.0) or 0.0)
+        conc_reason = None
+        if max_top10 > 0 and top10 > max_top10:
+            conc_reason = f"AI blok: sahiplik yoğun (top10 %{top10:.0f} > %{max_top10:.0f})"
+        elif max_insider > 0 and insider > max_insider:
+            conc_reason = f"AI blok: insider arzı yüksek (%{insider:.0f} > %{max_insider:.0f})"
+        if conc_reason:
+            _audit(db, "warning",
+                   f"AI alım engellendi — {short_addr(trade.mint)}: {conc_reason}",
+                   {"wallet": "AI_TRADE", "token": trade.mint, "signature": trade.signature,
+                    "reason": conc_reason, "token_score": assessment.total,
+                    "top10_pct": top10, "insider_supply_pct": insider, "strategy": "ai"})
+            return {"action": "skipped", "reason": conc_reason, "strategy": "ai",
+                    "wallet": "AI", "token": short_addr(trade.mint), "side": trade.side,
+                    "token_score": assessment.total}
 
     # AKILLI PARA MUTABAKATI (confluence): bu token'i son pencerede kaç FARKLI takip
     # cüzdanı aldı? 2+ bağımsız kaliteli cüzdan = çok daha güçlü sinyal. İsteğe bağlı

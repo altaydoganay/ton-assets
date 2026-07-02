@@ -54,8 +54,87 @@ def test_no_exit_when_all_disabled(db):
     seed_defaults(db)
     db.query(PaperTrade).delete()
     set_setting(db, "risk", {**DEFAULTS["risk"], "pure_mirror_mode": False, "take_profit_pct": 0.0, "stop_loss_pct": 0.0,
-                             "trailing_stop_pct": 0.0, "max_hold_minutes": 0})
+                             "trailing_stop_pct": 0.0, "max_hold_minutes": 0,
+                             "partial_tp_pct": 0.0, "exit_liq_drop_pct": 0.0, "stagnant_exit_minutes": 0})
     db.add(PaperTrade(wallet_address="W", token_mint="NOEX", side="buy",
                       sol_amount=1.0, token_amount=100, price_sol=0.01))
     db.commit()
     assert manage_positions(db, MutableMarket(0.05)) == []
+
+
+# --- Yeni akıllı çıkış paketi: kademeli TP + likidite watchdog + durgunluk ---
+from datetime import datetime, timezone, timedelta
+
+SMART_MINT = "SmartExitMint111111111111111111111111111111"
+
+
+class LiqMarket(MarketProvider):
+    name = "liq"
+    def __init__(self, price, liq_usd=None):
+        self.price = price; self.liq_usd = liq_usd
+    def get_token_market(self, mint):
+        return TokenMarketData(mint=mint, source=self.name, ok=True,
+                               price_sol=self.price, liquidity_usd=self.liq_usd)
+
+
+def _smart_risk(db, **over):
+    base = {**DEFAULTS["risk"], "pure_mirror_mode": False, "strategy_mode": "copy",
+            "take_profit_pct": 0, "stop_loss_pct": 0, "trailing_stop_pct": 0,
+            "max_hold_minutes": 0, "partial_tp_pct": 0, "partial_tp_fraction": 0.5,
+            "exit_liq_drop_pct": 0, "stagnant_exit_minutes": 0, "stagnant_max_pnl_pct": 0.0}
+    base.update(over)
+    set_setting(db, "risk", base)
+
+
+def _smart_open(db, qty=100.0, cost=0.10, minutes_ago=1):
+    db.query(PaperTrade).delete(); db.commit()
+    set_setting(db, "position_state", {})
+    t = PaperTrade(wallet_address="W", token_mint=SMART_MINT, side="buy", sol_amount=cost,
+                   token_amount=qty, price_sol=cost / qty, fee_sol=0.0, is_open=True,
+                   reason="copy-buy (paper)")
+    db.add(t); db.commit()
+    t.created_at = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+    db.commit()
+
+
+def test_partial_tp_sells_fraction_keeps_rest_open(db):
+    _smart_risk(db, partial_tp_pct=0.30, partial_tp_fraction=0.5)
+    _smart_open(db, qty=100, cost=0.10)  # giriş 0.001/adet
+    out = manage_positions(db, LiqMarket(0.0015))  # +%50 → kademeli tetiklenir
+    assert [c["reason"] for c in out] == ["partial_tp"]
+    sells = db.query(PaperTrade).filter(PaperTrade.side == "sell").all()
+    assert len(sells) == 1 and abs(sells[0].token_amount - 50.0) < 1e-6
+    assert sells[0].realized_pnl_sol > 0
+    # ikinci turda TEKRAR kademeli satmaz (bir kez)
+    out2 = manage_positions(db, LiqMarket(0.0015))
+    assert all(c["reason"] != "partial_tp" for c in out2)
+
+
+def test_liquidity_pull_forces_full_exit(db):
+    _smart_risk(db, exit_liq_drop_pct=0.6)
+    _smart_open(db, qty=100, cost=0.10)
+    manage_positions(db, LiqMarket(0.001, liq_usd=5000.0))       # zirve likidite
+    out = manage_positions(db, LiqMarket(0.0009, liq_usd=1200.0))  # %76 düşüş → acil
+    assert [c["reason"] for c in out] == ["liq_pull"]
+    sells = db.query(PaperTrade).filter(PaperTrade.side == "sell").all()
+    assert len(sells) == 1 and abs(sells[0].token_amount - 100.0) < 1e-6
+
+
+def test_liquidity_small_pool_noise_ignored(db):
+    _smart_risk(db, exit_liq_drop_pct=0.6)
+    _smart_open(db, qty=100, cost=0.10)
+    manage_positions(db, LiqMarket(0.001, liq_usd=300.0))  # 500$ tabanın altı
+    assert manage_positions(db, LiqMarket(0.001, liq_usd=50.0)) == []
+
+
+def test_stagnant_exit_after_minutes_without_profit(db):
+    _smart_risk(db, stagnant_exit_minutes=10, stagnant_max_pnl_pct=0.0)
+    _smart_open(db, qty=100, cost=0.10, minutes_ago=15)  # 15 dk'dır kârsız
+    out = manage_positions(db, LiqMarket(0.00095))
+    assert [c["reason"] for c in out] == ["stagnant"]
+
+
+def test_stagnant_not_triggered_when_profitable(db):
+    _smart_risk(db, stagnant_exit_minutes=10)
+    _smart_open(db, qty=100, cost=0.10, minutes_ago=15)
+    assert manage_positions(db, LiqMarket(0.002)) == []  # +%100 → durgun değil

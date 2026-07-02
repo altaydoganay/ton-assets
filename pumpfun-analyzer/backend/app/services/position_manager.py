@@ -32,32 +32,44 @@ from .stats_service import open_positions
 logger = logging.getLogger(__name__)
 
 
-def _price(db: Session, market: MarketProvider, mint: str) -> float:
+def _market_snapshot(db: Session, market: MarketProvider, mint: str) -> tuple[float, float]:
+    """(fiyat_sol, likidite_usd). Likidite ölçülemiyorsa 0 (watchdog atlar)."""
     try:
         md = market.get_token_market(mint)
         if md.ok and md.price_sol:
-            return float(md.price_sol)
+            return float(md.price_sol), float(md.liquidity_usd or 0.0)
     except Exception:  # noqa: BLE001
         pass
     token = db.query(Token).filter(Token.mint == mint).first()
-    return float((token.metrics or {}).get("price_sol", 0.0)) if token else 0.0
+    m = (token.metrics or {}) if token else {}
+    return float(m.get("price_sol", 0.0)), float(m.get("liquidity_usd", 0.0) or 0.0)
 
 
 def _decide(pnl_pct: float, peak_pnl_pct: float, drop_from_peak: float, held_min: float,
-            tp: float, sl: float, trail: float, trail_act: float, max_hold_min: float) -> str | None:
-    """Çıkış kararı (öncelik sırasıyla). Dönüş: sl|tp|trailing|time|None."""
+            tp: float, sl: float, trail: float, trail_act: float, max_hold_min: float,
+            stagnant_min: float = 0.0, stagnant_max_pnl: float = 0.0) -> str | None:
+    """Çıkış kararı (öncelik sırasıyla). Dönüş: sl|tp|trailing|stagnant|time|None.
+
+    stagnant: pozisyon `stagnant_min` dakikadır `stagnant_max_pnl`'in altındaysa
+    (momentum yok) beklemeden çık — pump.fun'da ölü token geri gelmez, sermaye
+    yeni fırsata dönmelidir. Likidite watchdog'u ana döngüde ayrı işlenir."""
     if sl > 0 and pnl_pct <= -sl:
         return "sl"
     if tp > 0 and pnl_pct >= tp:
         return "tp"
     if trail > 0 and peak_pnl_pct >= trail_act and drop_from_peak >= trail:
         return "trailing"
+    if stagnant_min > 0 and held_min >= stagnant_min and pnl_pct <= stagnant_max_pnl:
+        return "stagnant"
     if max_hold_min > 0 and held_min >= max_hold_min:
         return "time"
     return None
 
 
-_LABEL = {"sl": "stop-loss", "tp": "take-profit", "trailing": "takip eden stop", "time": "zaman çıkışı", "no_price_time": "zaman çıkışı / fiyat yok"}
+_LABEL = {"sl": "stop-loss", "tp": "take-profit", "trailing": "takip eden stop",
+          "time": "zaman çıkışı", "no_price_time": "zaman çıkışı / fiyat yok",
+          "liq_pull": "LİKİDİTE ÇEKİLDİ (acil çıkış)", "stagnant": "momentum yok (erken çıkış)",
+          "partial_tp": "kademeli kâr alımı"}
 
 
 def _as_utc(dt: datetime | None, fallback: datetime) -> datetime:
@@ -78,7 +90,19 @@ def manage_positions(db: Session, market: MarketProvider) -> list[dict]:
     trail = float(risk.get("trailing_stop_pct", 0) or 0)
     trail_act = float(risk.get("trail_activate_pct", 0.15) or 0)
     max_hold_min = float(risk.get("max_hold_minutes", 0) or 0)
-    if tp <= 0 and sl <= 0 and trail <= 0 and max_hold_min <= 0:
+    # KADEMELİ KÂR ALIMI: +partial_tp_pct'e ulaşınca pozisyonun partial_tp_fraction'ı
+    # satılır, kalan trailing ile taşınır → "erken tam satıp pump'ı kaçırma" ve
+    # "hiç satmayıp geri verme" arasındaki dengeyi kurar.
+    partial_tp = float(risk.get("partial_tp_pct", 0) or 0)
+    partial_frac = min(0.9, max(0.1, float(risk.get("partial_tp_fraction", 0.5) or 0.5)))
+    # LİKİDİTE WATCHDOG: havuz likiditesi görülen zirveden bu oranın ÜZERİNDE
+    # düştüyse (rug/çekilme işareti) TP/SL beklemeden ACİL tam çıkış.
+    liq_drop = float(risk.get("exit_liq_drop_pct", 0) or 0)
+    # DURGUNLUK ÇIKIŞI: stagnant_exit_minutes dakikadır kâr eşiğinin altında
+    # sürünen pozisyondan erken çık (ölü pump.fun tokeni geri gelmez).
+    stagnant_min = float(risk.get("stagnant_exit_minutes", 0) or 0)
+    stagnant_max_pnl = float(risk.get("stagnant_max_pnl_pct", 0.0) or 0.0)
+    if tp <= 0 and sl <= 0 and trail <= 0 and max_hold_min <= 0 and partial_tp <= 0 and liq_drop <= 0 and stagnant_min <= 0:
         return []
 
     state = dict(get_setting(db, "position_state") or {})
@@ -114,7 +138,7 @@ def manage_positions(db: Session, market: MarketProvider) -> list[dict]:
         entry = _as_utc(p.get("first_buy") or p.get("opened_at"), now)
         held_min = max(0.0, (now - entry).total_seconds() / 60.0)
 
-        price = _price(db, market, mint)
+        price, liq_usd = _market_snapshot(db, market, mint)
         if price <= 0:
             # Pump.fun tokenlerinde DexScreener/RPC fiyatı geç veya hiç gelmeyebilir.
             # Fiyat yok diye pozisyonu sonsuza kadar açık bırakmak paper sonuçlarını
@@ -134,8 +158,48 @@ def manage_positions(db: Session, market: MarketProvider) -> list[dict]:
             pnl_pct = (qty * price - cost) / cost
             peak_pnl_pct = (qty * peak - cost) / cost
             drop_from_peak = (peak - price) / peak if peak > 0 else 0.0
-            decision = _decide(pnl_pct, peak_pnl_pct, drop_from_peak, held_min,
-                               tp, sl, trail, trail_act, max_hold_min)
+
+            # LİKİDİTE WATCHDOG (en yüksek öncelik, SL'den bile önce): havuz
+            # boşaltılıyorsa fiyat gecikmeli çöker; likidite sinyali daha erkendir.
+            decision = None
+            if liq_usd > 0:
+                st["peak_liq"] = max(float(st.get("peak_liq", liq_usd)), liq_usd)
+                peak_liq = float(st["peak_liq"])
+                # gürültü tabanı: çok küçük havuzlarda oran anlamsız
+                if liq_drop > 0 and peak_liq >= 500.0 and liq_usd <= peak_liq * (1.0 - liq_drop):
+                    decision = "liq_pull"
+
+            # KADEMELİ KÂR ALIMI: yalnız partial eşiği ile TAM TP arasındaki bantta
+            # çalışır (fiyat tam TP'yi de aştıysa tam çıkış öncelikli — hepsini al).
+            in_partial_band = pnl_pct >= partial_tp and (tp <= 0 or pnl_pct < tp)
+            if decision is None and partial_tp > 0 and in_partial_band and not st.get("partial_done"):
+                part_qty = qty * partial_frac
+                part_cost = cost * partial_frac
+                part_proceeds = part_qty * price
+                part_pnl = part_proceeds - part_cost
+                db.add(PaperTrade(
+                    wallet_address=p["wallet_address"], token_mint=mint, side="sell",
+                    sol_amount=part_proceeds, token_amount=part_qty, price_sol=price, fee_sol=0.0,
+                    realized_pnl_sol=part_pnl, is_open=False, reason=f"{_LABEL['partial_tp']} (paper)",
+                ))
+                st["partial_done"] = True
+                db.add(AuditLog(level="info", category="trading",
+                                message=f"KADEMELİ kâr alımı: {mint[:6]}… %{int(partial_frac*100)} satıldı, "
+                                        f"PnL {round(part_pnl,4)} SOL (+{round(pnl_pct*100)}%), kalan trailing'de",
+                                context={"reason": "partial_tp", "exit_reason": "partial_tp",
+                                         "exit_label": _LABEL["partial_tp"],
+                                         "strategy": "ai" if p.get("wallet_address") == "AI_TRADE" else "copy",
+                                         "wallet": p.get("wallet_address"), "token": mint,
+                                         "pnl_sol": round(part_pnl, 4), "pnl_pct": round(pnl_pct, 4),
+                                         "fraction": partial_frac, "held_min": round(held_min, 1)}))
+                closed.append({"token_mint": mint, "reason": "partial_tp",
+                               "pnl_sol": round(part_pnl, 4), "held_min": round(held_min, 1)})
+                continue  # kalan pozisyon açık; tam çıkış kuralları sonraki turda
+
+            if decision is None:
+                decision = _decide(pnl_pct, peak_pnl_pct, drop_from_peak, held_min,
+                                   tp, sl, trail, trail_act, max_hold_min,
+                                   stagnant_min, stagnant_max_pnl)
             if decision is None:
                 continue
 

@@ -75,6 +75,17 @@ DEFAULTS: dict[str, dict] = {
         "trailing_stop_pct": 0.12,   # fiyat zirveden %12 düşerse sat (0 = kapalı)
         "trail_activate_pct": 0.15,  # takip eden stop, +%15 kâra ulaşınca aktifleşir
         "max_hold_minutes": 45,      # bu süre dolunca pozisyonu kapat (0 = kapalı)
+        # KADEMELİ KÂR ALIMI: +%35'te pozisyonun yarısı satılır, kalan trailing'de
+        # taşınır (erken tam satıp pump'ı kaçırma ↔ hiç satmayıp geri verme dengesi).
+        "partial_tp_pct": 0.35,
+        "partial_tp_fraction": 0.5,
+        # LİKİDİTE WATCHDOG: havuz likiditesi zirveden %60+ düştüyse (rug/çekilme)
+        # TP/SL beklemeden ACİL tam çıkış. 0 = kapalı.
+        "exit_liq_drop_pct": 0.6,
+        # DURGUNLUK ÇIKIŞI: 12 dk boyunca kârsız sürünen pozisyondan erken çık
+        # (ölü pump.fun tokeni geri gelmez; sermaye yeni fırsata dönmeli). 0 = kapalı.
+        "stagnant_exit_minutes": 12,
+        "stagnant_max_pnl_pct": 0.0,
         # --- AKILLI PARA MUTABAKATI (confluence) ---
         "min_confluence": 1,             # 1 = kapalı; 2 = sadece 2+ takip cüzdanı aynı token'i alınca aç
         "live_min_confluence": 1,        # canlıda hızlı giriş için confluence kapalı
@@ -571,6 +582,19 @@ def seed_defaults(db: Session) -> None:
         set_setting(db, "risk", risk)
         set_setting(db, "_meta_paper_follow_lag_v22", {"applied": True})
 
+    # v23: AKILLI ÇIKIŞ paketi (kademeli TP + likidite watchdog + durgunluk çıkışı).
+    # AI'ın zarar kaynağı çıkış yönetimiydi: sabit TP/SL taze tokende ya erken tam
+    # satıyor ya rug'da geç kalıyordu. Mevcut kurulumlara varsayılanlar eklenir.
+    if not db.query(Setting).filter(Setting.key == "_meta_smart_exit_v23").first():
+        risk = get_setting(db, "risk")
+        risk.setdefault("partial_tp_pct", 0.35)
+        risk.setdefault("partial_tp_fraction", 0.5)
+        risk.setdefault("exit_liq_drop_pct", 0.6)
+        risk.setdefault("stagnant_exit_minutes", 12)
+        risk.setdefault("stagnant_max_pnl_pct", 0.0)
+        set_setting(db, "risk", risk)
+        set_setting(db, "_meta_smart_exit_v23", {"applied": True})
+
 def get_strategy_mode(db: Session) -> str:
     """Aktif işlem motoru: copy veya ai. Hatalı/boş değerlerde copy'ye düşer."""
     risk = get_setting(db, "risk")
@@ -595,7 +619,13 @@ AI_POLICY_PRESETS: dict[str, dict] = {
         "ai_max_token_age_minutes": 45,
         "ai_require_known_token_age": True,
         "ai_require_price": True,
-        "ai_min_liquidity_sol": 0.0,
+        # Likidite ÖLÇÜLEBİLİYORSA taban: sığ havuzda slippage+fee kârı yer.
+        # (0/bilinmiyor = engelleme yok; taze bonding tokeni ölçülemez.)
+        "ai_min_liquidity_sol": 10.0,
+        # Sahiplik yoğunlaşması (ÖLÇÜLEBİLİYORSA): top-10 cüzdan arzın bu
+        # yüzdesinden fazlasını tutuyorsa insider/rug riski → alma.
+        "ai_max_top10_pct": 35.0,
+        "ai_max_insider_pct": 20.0,
         "ai_hard_age_gate": False,
         "ai_fresh_universe_enabled": True,
     },
@@ -607,7 +637,9 @@ AI_POLICY_PRESETS: dict[str, dict] = {
         "ai_max_token_age_minutes": 90,
         "ai_require_known_token_age": True,
         "ai_require_price": True,
-        "ai_min_liquidity_sol": 0.0,
+        "ai_min_liquidity_sol": 5.0,
+        "ai_max_top10_pct": 45.0,
+        "ai_max_insider_pct": 30.0,
         "ai_hard_age_gate": False,
         "ai_fresh_universe_enabled": True,
     },
@@ -619,7 +651,9 @@ AI_POLICY_PRESETS: dict[str, dict] = {
         "ai_max_token_age_minutes": 180,
         "ai_require_known_token_age": False,
         "ai_require_price": True,
-        "ai_min_liquidity_sol": 0.0,
+        "ai_min_liquidity_sol": 2.0,
+        "ai_max_top10_pct": 60.0,
+        "ai_max_insider_pct": 45.0,
         "ai_hard_age_gate": False,
         "ai_fresh_universe_enabled": True,
     },
@@ -642,6 +676,8 @@ def resolve_ai_policy(risk: dict) -> dict:
             "ai_require_known_token_age": bool(risk.get("ai_require_known_token_age", True)),
             "ai_require_price": bool(risk.get("ai_require_price", True)),
             "ai_min_liquidity_sol": float(risk.get("ai_min_liquidity_sol", 0.0) or 0.0),
+            "ai_max_top10_pct": float(risk.get("ai_max_top10_pct", 0.0) or 0.0),
+            "ai_max_insider_pct": float(risk.get("ai_max_insider_pct", 0.0) or 0.0),
             "ai_hard_age_gate": bool(risk.get("ai_hard_age_gate", False)),
             "ai_fresh_universe_enabled": bool(risk.get("ai_fresh_universe_enabled", True)),
             "source": "manual",

@@ -228,6 +228,31 @@ def test_live_buy_blocked_when_market_providers_down(db):
         provider_health.reset()
 
 
+def test_ai_blocks_concentrated_ownership(db):
+    """AI (token-bazlı, cüzdansız): top-10 sahiplik yoğunsa alım engellenir."""
+    # opportunistic: skor kapısı gevşek (geçer) ama top10 limiti %60 < %90 → blok
+    # (balanced'da yoğunlaşma cezası skoru zaten düşürüp skor kapısında eler.)
+    set_setting(db, "risk", {"enabled": True, "mode": "paper", "strategy_mode": "ai",
+                             "ai_auto_manage": True, "ai_risk_profile": "opportunistic"})
+    db.query(PaperTrade).delete(); db.query(LiveTrade).delete(); db.commit()
+    reset_engine()
+    # top-10 = 900k / 1M arz = %90 > opportunistic limiti (%60) → blok
+    chain = FakeChain(top_amounts=[400000, 300000, 200000], supply=1_000_000)
+
+    class FreshMarket(FakeMarket):
+        def get_token_market(self, mint):
+            md = super().get_token_market(mint)
+            md.pair_created_at = int((time.time() - 60) * 1000)  # 1 dk'lık taze token
+            return md
+
+    res = handle_trade_event(db, _trade("AnyTrader11111111111111111111111111111111",
+                                        mint="ConcMint1111111111111111111111111111111111",
+                                        sig="concevt"),
+                             chain=chain, market=FreshMarket(), notifier=TelegramNotifier())
+    assert res["action"] == "skipped"
+    assert "sahiplik yoğun" in res["reason"]
+
+
 def test_live_mode_blocks_fast_sniper_wallet(db):
     w = _make_tracked_wallet(db, addr="LeaderFastScalper444444444444444444444444")
     w.metrics = {

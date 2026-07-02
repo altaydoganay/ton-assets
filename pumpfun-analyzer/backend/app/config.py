@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     app_name: str = "Pump.fun Cüzdan Analizcisi"
     # SÜRÜM/BUILD numarası — her anlamlı güncellemede artar. Panelin üst barında
     # ve /health'te gösterilir; deploy'un doğru kodu aldığını buradan doğrularsın.
-    app_build: str = "90"
-    app_build_label: str = "WS 'block' modu — blockSubscribe(pump.fun) sunucu filtreli + tx gömülü: kredi ~100× düşer, getTransaction sıfırlanır, gecikme azalır"
+    app_build: str = "91"
+    app_build_label: str = "akıllı çıkış paketi (kademeli TP + likidite watchdog + durgunluk) + AI giriş kalitesi (likidite tabanı + sahiplik yoğunlaşma kapısı)"
     environment: Literal["development", "production", "test"] = "development"
     api_prefix: str = "/api"
     secret_key: str = Field(default="degistir-bu-anahtari", description="Uygulama imza anahtarı")
