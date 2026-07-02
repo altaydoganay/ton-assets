@@ -97,12 +97,29 @@ def test_resolve_logs_mode(monkeypatch):
     assert hl._resolve_logs_mode() == "all"
     monkeypatch.setattr(cfg.settings, "ws_logs_mode", "mentions", raising=False)
     assert hl._resolve_logs_mode() == "mentions"
-    # auto: Helius anahtarı varsa mentions, yoksa all (Chainstack)
+    monkeypatch.setattr(cfg.settings, "ws_logs_mode", "block", raising=False)
+    assert hl._resolve_logs_mode() == "block"
+    # auto: Helius anahtarı varsa mentions, yoksa block (Chainstack — en ucuz/hızlı)
     monkeypatch.setattr(cfg.settings, "ws_logs_mode", "auto", raising=False)
     monkeypatch.setattr(cfg.settings, "helius_api_key", "", raising=False)
-    assert hl._resolve_logs_mode() == "all"
+    assert hl._resolve_logs_mode() == "block"
     monkeypatch.setattr(cfg.settings, "helius_api_key", "realkey123", raising=False)
     assert hl._resolve_logs_mode() == "mentions"
+
+
+def test_block_txs_from_notification():
+    from app.workers.helius_listener import block_txs_from_notification
+    notif = {"jsonrpc": "2.0", "method": "blockNotification", "params": {"result": {"value": {
+        "slot": 123, "block": {"blockTime": 1700000000, "transactions": [
+            {"transaction": {"signatures": ["okSig"]}, "meta": {"err": None, "fee": 5000}},
+            {"transaction": {"signatures": ["failSig"]}, "meta": {"err": {"InstructionError": [0, 1]}}},
+        ]}}}}}
+    txs = block_txs_from_notification(notif)
+    assert len(txs) == 1  # başarısız (err'li) işlem elendi
+    assert txs[0]["blockTime"] == 1700000000 and txs[0]["slot"] == 123
+    assert txs[0]["transaction"]["signatures"] == ["okSig"]
+    # boş/bozuk bildirim sorunsuz boş döner
+    assert block_txs_from_notification({}) == []
 
 
 def test_ai_cooldown_dedups_same_mint():

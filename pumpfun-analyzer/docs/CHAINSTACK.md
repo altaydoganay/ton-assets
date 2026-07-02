@@ -78,17 +78,21 @@ curl -s -X POST "$SOLANA_RPC_URL" -H 'content-type: application/json' \
 - **Teknik Loglar** → `[LISTENER] Helius WS connected` benzeri satır (WS bağlandı).
   Ardından takip/keşif olayları akmaya başlar.
 
-**c) WebSocket (logsSubscribe) — ÖNEMLİ NOT (build 82 ile çözüldü):**
-Chainstack shared node'u `logsSubscribe`'ı **`mentions` filtresiyle DESTEKLEMEZ**
-(aboneliği kabul eder ama hiç bildirim göndermez). Sadece `logsSubscribe "all"` çalışır.
-Bizim dinleyicimiz bunu otomatik halleder: **`WS_LOGS_MODE=auto`** (varsayılan) →
-Helius anahtarı yoksa **"all"** modunu seçer → tüm logları alıp **pump.fun'ı
-client-side filtreler**. Böylece copy + AI Chainstack'te çalışır. (Canlı Chainstack
-verisiyle uçtan uca doğrulandı.)
+**c) WebSocket — KREDİ/HIZ İÇİN EN İYİ YOL: "block" modu (build 90):**
+Chainstack shared node'u `logsSubscribe mentions`'ı DESTEKLEMEZ (abonelik kabul,
+bildirim yok). "all" çalışır ama TÜM Solana loglarını yollar → her bildirim kredi
+yakar (metrics'te devasa logsNotification kalemi buydu).
 
-Maliyet notu: "all" modu daha çok WS bant genişliği kullanır (tüm Solana logları),
-ama getTransaction yalnız pump.fun işlemlerine yapılır (rate-limitli) → RPC kredisi
-kontrollü, SOL harcanmaz.
+Çözüm: **`blockSubscribe(mentionsAccountOrProgram=pump.fun, transactionDetails=full)`**
+Chainstack'te çalışır ve:
+- SUNUCU filtreli → yalnız pump.fun içeren bloklar, içinde YALNIZ eşleşen işlemler
+  (bildirim sayısı "all"e göre ~100× az → kredi ~100× az).
+- İşlemler META'sıyla GÖMÜLÜ gelir → **getTransaction çağrısı SIFIR** (hem kredi
+  hem gecikme kazancı — ek RTT yok, launch daha erken yakalanır).
+
+`WS_LOGS_MODE=auto` (varsayılan): Helius anahtarı varsa mentions, yoksa **block**.
+Node blockSubscribe'ı reddederse çalışma anında otomatik "all"e düşülür.
+Canlı doğrulandı: 8 blok → 46 pump.fun tx gömülü, 44 alım + 1 create, 0 getTransaction.
 
 ---
 

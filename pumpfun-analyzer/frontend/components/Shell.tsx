@@ -200,7 +200,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-3">
             <span className="hidden text-xs muted xl:inline">Kâr garantisi yok · küçük bakiye ve paper doğrulama önerilir</span>
             <EmergencyStop risk={risk} onChange={() => mutate()} />
-            <span className="badge hidden sm:inline-flex">UI 89</span>
+            <span className="badge hidden sm:inline-flex">UI 90</span>
             <NotificationCenter />
             <WalletConnect />
             <SoundToggle />

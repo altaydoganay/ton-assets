@@ -127,12 +127,37 @@ def build_ai_trades(ntx) -> list[PumpPortalTrade]:
 
 
 def _resolve_logs_mode() -> str:
-    """Etkin WS logsSubscribe modu: 'mentions' veya 'all'."""
+    """Etkin WS abonelik modu: 'mentions', 'block' veya 'all'."""
     m = (settings.ws_logs_mode or "auto").lower()
-    if m in ("mentions", "all"):
+    if m in ("mentions", "all", "block"):
         return m
-    # auto: Helius (mentions'ı destekler) → mentions; aksi (Chainstack/standart) → all
-    return "mentions" if settings.helius_api_key else "all"
+    # auto: Helius (mentions destekler) → mentions; aksi (Chainstack/standart) →
+    # block (sunucu filtreli + tx gömülü = en ucuz/en hızlı; başarısızsa
+    # çalışma anında 'all'e düşülür).
+    return "mentions" if settings.helius_api_key else "block"
+
+
+def block_txs_from_notification(msg: dict) -> list[dict]:
+    """blockNotification'dan getTransaction-uyumlu ham tx sözlükleri çıkar.
+
+    blockSubscribe(transactionDetails=full) her eşleşen işlemi {transaction, meta}
+    olarak GÖMÜLÜ verir; blockTime/slot blok seviyesindedir. normalize_rpc_transaction
+    getTransaction şekli beklediği için blockTime/slot'u tx'e taşırız. Başarısız
+    (meta.err) işlemler elenir. → pump.fun için getTransaction ÇAĞRISI GEREKMEZ."""
+    value = (((msg.get("params") or {}).get("result")) or {}).get("value") or {}
+    blk = value.get("block") or {}
+    slot = value.get("slot")
+    btime = blk.get("blockTime") or 0
+    out: list[dict] = []
+    for entry in (blk.get("transactions") or []):
+        meta = entry.get("meta") or {}
+        if meta.get("err") is not None:
+            continue
+        raw = dict(entry)
+        raw["blockTime"] = btime
+        raw["slot"] = slot
+        out.append(raw)
+    return out
 
 
 def logs_mention_pumpfun(logs) -> bool:
@@ -206,6 +231,8 @@ class HeliusListener:
         # copy+AI+keşif beslenir (Chainstack mentions'ı desteklemediği için).
         self.logs_mode = "mentions"
         self.tracked_set: set[str] = set()
+        # block modu çalışma anında başarısız olursa (node desteklemiyor) 'all'e düş.
+        self.block_failed = False
 
     def _next_id(self) -> int:
         self._req_id += 1
@@ -251,11 +278,30 @@ class HeliusListener:
             "params": ["all", {"commitment": "confirmed"}],
         }))
 
+    async def _subscribe_block(self, ws):
+        """'block' modu: blockSubscribe(mentionsAccountOrProgram=pump.fun, full).
+
+        Sunucu yalnız pump.fun içeren blokları, İÇİNDE YALNIZ EŞLEŞEN işlemler
+        meta'sıyla gömülü olarak yollar → getTransaction gerekmez, "all"e göre
+        ~100× az bildirim (kredi) ve daha düşük gecikme (ek RTT yok)."""
+        rid = self._next_id()
+        self.pending[rid] = ("blockfire", None)
+        await ws.send(json.dumps({
+            "jsonrpc": "2.0", "id": rid, "method": "blockSubscribe",
+            "params": [
+                {"mentionsAccountOrProgram": PUMP_FUN_PROGRAM},
+                {"commitment": "confirmed", "encoding": "jsonParsed",
+                 "transactionDetails": "full", "showRewards": False,
+                 "maxSupportedTransactionVersion": 0},
+            ],
+        }))
+
     async def _unsubscribe_kind(self, ws, kind: str):
+        method = "blockUnsubscribe" if kind == "blockfire" else "logsUnsubscribe"
         for sid in [s for s, (k, _w) in list(self.sub_meta.items()) if k == kind]:
             try:
                 await ws.send(json.dumps({"jsonrpc": "2.0", "id": self._next_id(),
-                                          "method": "logsUnsubscribe", "params": [sid]}))
+                                          "method": method, "params": [sid]}))
             except Exception:  # noqa: BLE001
                 pass
             self.sub_meta.pop(sid, None)
@@ -284,10 +330,24 @@ class HeliusListener:
                 # A1: AI modunda firehose ZORUNLU (AI token-fırsat evreni oradan gelir).
                 self.strategy_mode = await asyncio.to_thread(_strategy_mode)
                 self.logs_mode = _resolve_logs_mode()
+                if self.logs_mode == "block" and self.block_failed:
+                    self.logs_mode = "all"  # node blockSubscribe vermedi → son çare
                 self.tracked_set = set(_tracked_addresses())
                 want_discovery = (await asyncio.to_thread(_discovery_on)) or self.strategy_mode == "ai"
 
-                if self.logs_mode == "all":
+                if self.logs_mode == "block":
+                    # CHAINSTACK (tercih): sunucu filtreli pump.fun blok akışı; tx
+                    # gömülü gelir. copy + AI + keşif hepsi buradan, getTransaction'sız.
+                    need = want_discovery or self.strategy_mode == "ai" or bool(self.tracked_set)
+                    if need and not self.discovery_sub_active:
+                        await self._subscribe_block(ws)
+                        self.discovery_sub_active = True
+                        logger.info("[LISTENER] blockSubscribe AÇIK (pump.fun sunucu-filtreli, tx gömülü — getTransaction yok)")
+                    elif not need and self.discovery_sub_active:
+                        await self._unsubscribe_kind(ws, "blockfire")
+                        self.discovery_sub_active = False
+                        logger.info("[LISTENER] blockSubscribe KAPALI")
+                elif self.logs_mode == "all":
                     # CHAINSTACK/STANDART: mentions çalışmaz → tek 'all' firehose +
                     # client-side pump.fun filtresi. copy + AI + keşif hepsi buradan.
                     need = want_discovery or self.strategy_mode == "ai" or bool(self.tracked_set)
@@ -327,6 +387,27 @@ class HeliusListener:
             meta = self.pending.pop(msg["id"], None)
             if meta:
                 self.sub_meta[msg["result"]] = meta
+            return
+        # abonelik HATASI: block modu desteklenmiyorsa 'all'e otomatik düş.
+        if "error" in msg and "id" in msg:
+            meta = self.pending.pop(msg["id"], None)
+            if meta and meta[0] == "blockfire":
+                self.block_failed = True
+                self.discovery_sub_active = False
+                logger.warning("blockSubscribe reddedildi (%s) — 'all' moduna düşülüyor", msg.get("error"))
+            return
+        if msg.get("method") == "blockNotification":
+            # 'block' modu: eşleşen pump.fun işlemleri meta'sıyla GÖMÜLÜ geldi.
+            for raw_tx in block_txs_from_notification(msg):
+                logs = (raw_tx.get("meta") or {}).get("logMessages") or []
+                is_create = logs_is_pumpfun_create(logs)
+                if is_create:
+                    self.stat_creates += 1
+                # Create HER ZAMAN işlenir (launch anı); copy modunda takip filtresi
+                # zaten client-side ucuz. AI'da sıradan trade'ler değerlendirme
+                # bütçesiyle (assess_token zincir/piyasa çağrıları) örneklenir.
+                if is_create or self.strategy_mode != "ai" or self.limiter.allow():
+                    await asyncio.to_thread(self._handle_block_tx, raw_tx)
             return
         if msg.get("method") != "logsNotification":
             return
@@ -414,6 +495,24 @@ class HeliusListener:
                 self._route_ai_signals(ntx)
         except Exception as exc:  # noqa: BLE001
             logger.warning("[DISCOVERY] olay atlandı: %s", exc)
+
+    def _handle_block_tx(self, raw_tx: dict):
+        """'block' modu: GÖMÜLÜ gelen işlemi işle (getTransaction YOK → 0 ek RPC).
+        Keşif aday kaydı + (AI veya copy) yönlendirme — _handle_firehose ile aynı
+        akış, sadece ağ çağrısı olmadan."""
+        self.stat_lookups += 1
+        try:
+            ntx = normalize_rpc_transaction(raw_tx)
+            if ntx is None:
+                return
+            for wallet, mint in extract_buyers(ntx):
+                self._record_buyer(wallet, mint)
+            if self.strategy_mode == "ai":
+                self._route_ai_signals(ntx)
+            else:
+                self._route_copy_signals(ntx)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[BLOCKFIRE] olay atlandı: %s", exc)
 
     def _handle_firehose(self, sig: str):
         """'all' modu: pump.fun işlemini işle → keşif + (AI veya copy) yönlendir.

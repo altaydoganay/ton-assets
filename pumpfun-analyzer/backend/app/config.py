@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     app_name: str = "Pump.fun Cüzdan Analizcisi"
     # SÜRÜM/BUILD numarası — her anlamlı güncellemede artar. Panelin üst barında
     # ve /health'te gösterilir; deploy'un doğru kodu aldığını buradan doğrularsın.
-    app_build: str = "89"
-    app_build_label: str = "AI launch yakalama: taze token yaş bug'ı (pair_created_at=0 → '56 yıl eski') düzeltildi + yeni-token (Create) rate-limit'i aşarak öncelikli işlenir"
+    app_build: str = "90"
+    app_build_label: str = "WS 'block' modu — blockSubscribe(pump.fun) sunucu filtreli + tx gömülü: kredi ~100× düşer, getTransaction sıfırlanır, gecikme azalır"
     environment: Literal["development", "production", "test"] = "development"
     api_prefix: str = "/api"
     secret_key: str = Field(default="degistir-bu-anahtari", description="Uygulama imza anahtarı")
@@ -81,12 +81,17 @@ class Settings(BaseSettings):
         return v
     # Canlı dinleyici sağlayıcısı: "helius" (ücretsiz, SOL yakmaz) | "pumpportal"
     listener_provider: str = "auto"
-    # WS logsSubscribe modu. "mentions" (adres filtresi) yalnız Helius/Triton gibi
-    # index'li node'larda ÇALIŞIR; Chainstack vb. standart/shared node'lar mentions'ı
-    # KABUL edip hiç bildirim GÖNDERMEZ. "all" tüm logları alıp pump.fun'ı client-side
-    # filtreler (her node'da çalışır, daha çok bant genişliği). "auto": Helius anahtarı
-    # varsa mentions, yoksa all. Chainstack kullanıyorsan auto zaten "all" seçer.
-    ws_logs_mode: Literal["auto", "mentions", "all"] = "auto"
+    # WS abonelik modu:
+    #  "mentions" → logsSubscribe adres filtreli (yalnız Helius/Triton destekler).
+    #  "block"    → blockSubscribe(mentionsAccountOrProgram=pump.fun, full):
+    #               SUNUCU filtreli + işlemler META'sıyla GÖMÜLÜ gelir →
+    #               getTransaction ÇAĞRISI YOK, "all"e göre ~100× az bildirim.
+    #               Chainstack'te canlı doğrulandı. EN UCUZ + EN HIZLI yol.
+    #  "all"      → logsSubscribe["all"]: tüm Solana logları, client-side filtre.
+    #               Çok kredi yakar; yalnız block da mentions da çalışmayan node
+    #               için son çare (block başarısız olursa otomatik buna düşülür).
+    #  "auto"     → Helius anahtarı varsa mentions, yoksa block.
+    ws_logs_mode: Literal["auto", "mentions", "all", "block"] = "auto"
     # RPC hız limiti koruması: istekler arası asgari süre (sn) ve 429 tekrar sayısı.
     # Helius ücretsiz katman ~10 istek/sn; 0.12 ≈ 8 istek/sn güvenli.
     # NOT: Bu throttle yalnızca arka plan KEŞİF analizinde uygulanır; canlı alım
