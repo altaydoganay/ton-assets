@@ -1,5 +1,19 @@
 # Chainstack Entegrasyonu (Helius / PumpPortal yerine)
 
+> ## ⚠️ AYLIK KOTA (RU) BİTERSE — build 93 otomatik ele alır
+> Chainstack free planda aylık Request Unit kotası dolunca endpoint **HTTP 403
+> "monthly quota of Request Units"** döner (WS bağlantısı dahil reddedilir).
+> Build 93'ten itibaren sistem bunu KENDİ toparlar:
+> - WS: `SOLANA_WS_FALLBACK_URL` (vars. public mainnet-beta) adresine döner;
+>   public node `blockSubscribe` vermez ama `logsSubscribe(mentions)` İLETİR →
+>   mod merdiveni otomatik "mentions" seçer (canlı E2E: ~80+ bildirim/dk,
+>   getTransaction + alım çıkarımı doğrulandı).
+> - HTTP: metod bazında zaten public'e düşer (403 → endpoint sağlıksız).
+> - Kota tazelenince (ay başı / PAYG) dinleyici otomatik Chainstack block
+>   moduna GERİ döner (her reconnect'te önce birincil denenir).
+> Kalıcı çözüm önerisi: block modu tüketimi ~%99 düşürdüğü için **Pay-as-you-go**
+> açmak güvenlidir; ya da ay başını bekle / yeni endpoint aç.
+
 Amaç: derin zincir verisini (cüzdan geçmişi, token güvenliği, keşif) ve gerçek-zamanlı
 akışı **Helius kredisi bitmeden / PumpPortal SOL yakmadan** Chainstack üzerinden almak.
 
