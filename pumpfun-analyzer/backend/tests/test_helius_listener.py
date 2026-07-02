@@ -122,6 +122,51 @@ def test_block_txs_from_notification():
     assert block_txs_from_notification({}) == []
 
 
+def test_curve_sol_tracking():
+    """Migration yakınlığı: alım net SOL girişini artırır, satım düşürür."""
+    from app.workers.helius_listener import HeliusListener
+    lis = HeliusListener()
+    buy_tx = NormalizedTx(signature="c1", block_time=1, slot=1, fee_sol=0.0,
+                          programs=[PUMP_FUN_PROGRAM],
+                          sol_deltas={BUYER: -2.0},
+                          token_deltas={(BUYER, MINT): 1000.0})
+    sell_tx = NormalizedTx(signature="c2", block_time=2, slot=2, fee_sol=0.0,
+                           programs=[PUMP_FUN_PROGRAM],
+                           sol_deltas={OTHER: 0.5},
+                           token_deltas={(OTHER, MINT): -300.0})
+    lis._update_curve(buy_tx)
+    assert abs(lis.curve_sol[MINT] - 2.0) < 1e-9
+    lis._update_curve(sell_tx)
+    assert abs(lis.curve_sol[MINT] - 1.5) < 1e-9
+    # WSOL sayılmaz
+    wsol_tx = NormalizedTx(signature="c3", block_time=3, slot=3, fee_sol=0.0,
+                           programs=[PUMP_FUN_PROGRAM],
+                           sol_deltas={BUYER: -1.0},
+                           token_deltas={(BUYER, WSOL_MINT): 1.0})
+    lis._update_curve(wsol_tx)
+    assert WSOL_MINT not in lis.curve_sol
+
+
+def test_mark_created_sets_on_chain_time(db):
+    """Create tx'i tokenın GERÇEK zincir oluşturma zamanını yazar (yaş kesinleşir)."""
+    from datetime import timezone
+    from app.models import Token
+    from app.workers.helius_listener import HeliusListener
+    db.query(Token).filter(Token.mint == MINT).delete(); db.commit()
+    lis = HeliusListener()
+    tx = NormalizedTx(signature="cr1", block_time=1700000123, slot=9, fee_sol=0.0,
+                      programs=[PUMP_FUN_PROGRAM],
+                      sol_deltas={BUYER: -0.5},
+                      token_deltas={(BUYER, MINT): 1_000_000.0})
+    lis._mark_created(tx)
+    tok = db.query(Token).filter(Token.mint == MINT).first()
+    assert tok is not None and tok.created_on_chain_at is not None
+    ts = tok.created_on_chain_at
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    assert int(ts.timestamp()) == 1700000123
+
+
 def test_ai_cooldown_dedups_same_mint():
     from app.workers.helius_listener import HeliusListener
     lis = HeliusListener()

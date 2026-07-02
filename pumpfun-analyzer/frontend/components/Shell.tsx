@@ -38,9 +38,9 @@ const COPY_NAV: NavGroup[] = [
   ]},
   { group: "İşlemler", items: [
     { href: "/events", label: "Cüzdan Olay Akışı", icon: Activity },
-    { href: "/paper", label: "Paper Copy", icon: FlaskConical },
-    { href: "/live", label: "Canlı Copy", icon: Zap },
     { href: "/positions", label: "Açık Pozisyonlar", icon: Wallet },
+    // Paper/Canlı detay panelleri Geçmiş sayfasının üstündeki hızlı
+    // sekmelerden açılır (nav sadeleştirme: 3 benzer sayfa → tek giriş).
     { href: "/history", label: "İşlem Geçmişi", icon: History },
   ]},
   { group: "Ayarlar", items: [
@@ -200,7 +200,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-3">
             <span className="hidden text-xs muted xl:inline">Kâr garantisi yok · küçük bakiye ve paper doğrulama önerilir</span>
             <EmergencyStop risk={risk} onChange={() => mutate()} />
-            <span className="badge hidden sm:inline-flex">UI 91</span>
+            <span className="badge hidden sm:inline-flex">UI 92</span>
             <NotificationCenter />
             <WalletConnect />
             <SoundToggle />

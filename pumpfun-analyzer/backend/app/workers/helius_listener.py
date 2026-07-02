@@ -30,10 +30,11 @@ from ..adapters.registry import build_chain_provider
 from ..core.analysis.swap_detection import (
     PUMP_FUN_PROGRAM,
     PUMP_SWAP_PROGRAM,
+    WSOL_MINT,
     detect_swap,
     extract_buyers,
 )
-from ..models import Wallet, WalletStatus
+from ..models import Token, Wallet, WalletStatus
 from ..notifications.telegram import TelegramNotifier
 from ..services.discovery import record_candidate
 from ..services.live_flow import handle_trade_event
@@ -225,7 +226,12 @@ class HeliusListener:
         self.strategy_mode = "copy"
         self._ai_last_by_mint: dict[str, float] = {}
         self.stat_ai_signals = 0
-        self.stat_creates = 0   # yakalanan yeni-token (Create) sayısı ('all' modu)
+        self.stat_creates = 0   # yakalanan yeni-token (Create) sayısı
+        # MIGRATION YAKINLIĞI: mint başına gözlenen NET SOL girişi (alım - satım).
+        # pump.fun bonding curve ~85 SOL dolunca PumpSwap'a mezun olur; bu tahmin
+        # AI sinyaline eklenir (curve_sol_est) — token'ın mezuniyete ne kadar
+        # yaklaştığının ucuz, akıştan-türetilmiş göstergesi.
+        self.curve_sol: "OrderedDict[str, float]" = OrderedDict()
         # WS logsSubscribe modu: 'mentions' (Helius) veya 'all' (Chainstack/standart).
         # 'all' modunda tek firehose aboneliği + client-side pump.fun filtresi ile
         # copy+AI+keşif beslenir (Chainstack mentions'ı desteklemediği için).
@@ -407,7 +413,7 @@ class HeliusListener:
                 # zaten client-side ucuz. AI'da sıradan trade'ler değerlendirme
                 # bütçesiyle (assess_token zincir/piyasa çağrıları) örneklenir.
                 if is_create or self.strategy_mode != "ai" or self.limiter.allow():
-                    await asyncio.to_thread(self._handle_block_tx, raw_tx)
+                    await asyncio.to_thread(self._handle_block_tx, raw_tx, is_create)
             return
         if msg.get("method") != "logsNotification":
             return
@@ -496,7 +502,44 @@ class HeliusListener:
         except Exception as exc:  # noqa: BLE001
             logger.warning("[DISCOVERY] olay atlandı: %s", exc)
 
-    def _handle_block_tx(self, raw_tx: dict):
+    def _update_curve(self, ntx) -> None:
+        """Akıştan mint başına NET SOL girişini biriktir (migration yakınlığı tahmini)."""
+        for (owner, mint), amt in (ntx.token_deltas or {}).items():
+            if mint == WSOL_MINT:
+                continue
+            sol = float((ntx.sol_deltas or {}).get(owner, 0.0))
+            if amt > 0 and sol < 0:      # alım: SOL curve'e girdi
+                self.curve_sol[mint] = self.curve_sol.get(mint, 0.0) - sol
+            elif amt < 0 and sol > 0:    # satım: SOL curve'den çıktı
+                self.curve_sol[mint] = self.curve_sol.get(mint, 0.0) - sol
+            self.curve_sol.move_to_end(mint, last=True)
+        while len(self.curve_sol) > 20000:  # bellek koruması (en eskiyi at)
+            self.curve_sol.popitem(last=False)
+
+    def _mark_created(self, ntx) -> None:
+        """Create tx'inden GERÇEK oluşturma zamanını token'a yaz.
+
+        Yaş kapısı artık tahmine (first_seen/pair) değil zincirdeki gerçek create
+        zamanına dayanır — 'token eski/çok yeni' kararları kesinleşir."""
+        from datetime import datetime, timezone
+        mints = {m for (_o, m) in (ntx.token_deltas or {}).keys() if m != WSOL_MINT}
+        if not mints or not ntx.block_time:
+            return
+        created = datetime.fromtimestamp(int(ntx.block_time), tz=timezone.utc)
+        db = SessionLocal()
+        try:
+            from ..services.analysis_service import get_or_create_token
+            for mint in mints:
+                token = get_or_create_token(db, mint)
+                if token.created_on_chain_at is None:
+                    token.created_on_chain_at = created
+            db.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("create zamanı yazılamadı: %s", exc)
+        finally:
+            db.close()
+
+    def _handle_block_tx(self, raw_tx: dict, is_create: bool = False):
         """'block' modu: GÖMÜLÜ gelen işlemi işle (getTransaction YOK → 0 ek RPC).
         Keşif aday kaydı + (AI veya copy) yönlendirme — _handle_firehose ile aynı
         akış, sadece ağ çağrısı olmadan."""
@@ -505,6 +548,9 @@ class HeliusListener:
             ntx = normalize_rpc_transaction(raw_tx)
             if ntx is None:
                 return
+            self._update_curve(ntx)
+            if is_create:
+                self._mark_created(ntx)
             for wallet, mint in extract_buyers(ntx):
                 self._record_buyer(wallet, mint)
             if self.strategy_mode == "ai":
@@ -569,12 +615,20 @@ class HeliusListener:
             for trade in trades:
                 if not self._ai_cooldown_ok(trade.mint):
                     continue
+                curve = round(float(self.curve_sol.get(trade.mint, 0.0)), 3)
+                trade.raw["_curve_sol_est"] = curve  # migration yakınlığı tahmini
                 try:
                     res = handle_trade_event(db, trade, chain=self.chain,
                                              notifier=self.notifier, signer=self.signer)
                     self.stat_ai_signals += 1
+                    # curve tahminini token'a işle (panel + skorlama okuyabilsin)
+                    if curve > 0:
+                        tok = db.query(Token).filter(Token.mint == trade.mint).first()
+                        if tok is not None:
+                            tok.metrics = {**(tok.metrics or {}), "curve_sol_est": curve}
+                            db.commit()
                     if res.get("action") == "buy" and res.get("traded"):
-                        logger.info("[AI-WS] alım açıldı %s", trade.mint[:8])
+                        logger.info("[AI-WS] alım açıldı %s (curve≈%.1f SOL)", trade.mint[:8], curve)
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("[AI-WS] sinyal işlenemedi %s: %s", trade.mint[:8], exc)
         finally:

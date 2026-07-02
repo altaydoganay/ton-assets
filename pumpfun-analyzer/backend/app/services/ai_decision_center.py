@@ -398,8 +398,52 @@ def ai_decision_center(db: Session, minutes: int = 60, limit: int = 50) -> dict[
         "best_pnl_sol": round(float(best.get("pnl_sol") or 0), 6) if best else 0.0,
         "worst_pnl_sol": round(float(worst.get("pnl_sol") or 0), 6) if worst else 0.0,
     }
+    # --- AI PAPER KARNE: "canlıya hazır mı?" sorusuna ölçülebilir cevap ---
+    gross_win = sum(float(s.get("pnl_sol") or 0) for s in wins)
+    gross_loss = abs(sum(float(s.get("pnl_sol") or 0) for s in losses))
+    profit_factor = round(gross_win / gross_loss, 2) if gross_loss > 0 else (999.0 if gross_win > 0 else 0.0)
+    med_hold = None
+    if holds:
+        hs = sorted(holds)
+        med_hold = round(hs[len(hs) // 2], 1)
+    win_rate = summary["win_rate"]
+    criteria = [
+        {"key": "sample", "label": "Yeterli örneklem (≥25 kapanan işlem)",
+         "ok": len(closed) >= 25, "value": len(closed)},
+        {"key": "pnl", "label": "Dönem PnL pozitif",
+         "ok": pnl > 0, "value": round(pnl, 4)},
+        {"key": "edge", "label": "Kenar var (isabet ≥%40 veya profit factor ≥1.3)",
+         "ok": (win_rate >= 0.40 or profit_factor >= 1.3), "value": f"wr={win_rate:.0%} pf={profit_factor}"},
+        {"key": "tail", "label": "Tek işlem felaketi yok (en kötü ≥ -0.05 SOL)",
+         "ok": summary["worst_pnl_sol"] >= -0.05, "value": summary["worst_pnl_sol"]},
+    ]
+    live_ready = all(c["ok"] for c in criteria)
+    if profit_factor >= 1.8 and win_rate >= 0.45:
+        grade = "A"
+    elif profit_factor >= 1.3 and win_rate >= 0.35:
+        grade = "B"
+    elif profit_factor >= 1.0:
+        grade = "C"
+    else:
+        grade = "D"
+    report = {
+        "grade": grade,
+        "live_ready": live_ready,
+        "criteria": criteria,
+        "profit_factor": profit_factor,
+        "win_rate": win_rate,
+        "closed_trades": len(closed),
+        "realized_pnl_sol": round(pnl, 6),
+        "median_hold_minutes": med_hold,
+        "best_pnl_sol": summary["best_pnl_sol"],
+        "worst_pnl_sol": summary["worst_pnl_sol"],
+        "verdict": ("Canlıya hazır görünüyor — küçük bakiyeyle başla." if live_ready
+                    else "Henüz canlıya hazır değil — paper biriktirmeye devam."),
+    }
+
     return {
         "summary": summary,
+        "report": report,
         "funnel": {
             "top_reasons": [{"reason": k, "count": v, "pct": round(v / max(1, blocked_count), 3)} for k, v in reasons.most_common(12)],
             "counts": {**counts, "opened": opened_count, "blocked": blocked_count, "total": decision_total},

@@ -1,0 +1,8 @@
+# Satır sonu politikası: repo LF (build 73 .rar'ı karışık CRLF getirmişti;
+# bu dosya diff gürültüsünü kalıcı bitirir). Windows'ta checkout da LF kalır
+# (Docker/linux hedefli proje).
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.db binary

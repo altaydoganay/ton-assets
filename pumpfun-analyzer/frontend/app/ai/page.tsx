@@ -152,6 +152,41 @@ export default function AiTradePage() {
         <StatCard label="En kötü" value={sol(s.worst_pnl_sol)} hint="Risk kontrol" icon={<TrendingDown size={18} />} tone="var(--rose)" />
       </div>
 
+      {center?.report && (
+        <section className="card" style={{ borderColor: center.report.live_ready ? "color-mix(in srgb, var(--emerald) 45%, var(--border))" : "var(--border)" }}>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 font-bold"><FlaskConical size={18} className="brand" /> AI Paper Karnesi
+              <InfoTip title="AI Paper Karnesi">Kapanan paper işlemlerden hesaplanır: örneklem, PnL, kenar (isabet/profit factor) ve kuyruk riski. Dört kriter de yeşilse canlıya küçük bakiyeyle geçmek makuldür.</InfoTip>
+            </h2>
+            <div className="flex items-center gap-2">
+              <span className="grid h-10 w-10 place-items-center rounded-2xl text-lg font-black text-white"
+                style={{ background: center.report.grade === "A" ? "var(--emerald)" : center.report.grade === "B" ? "var(--sky)" : center.report.grade === "C" ? "var(--amber)" : "var(--rose)" }}>
+                {center.report.grade}
+              </span>
+              <span className={`rounded-full px-3 py-1 text-xs font-bold ${center.report.live_ready ? "bg-emerald-500/15 text-emerald-500" : "bg-amber-500/15 text-amber-500"}`}>
+                {center.report.live_ready ? "CANLIYA HAZIR" : "PAPER'DA KAL"}
+              </span>
+            </div>
+          </div>
+          <div className="grid gap-2 md:grid-cols-2">
+            {(center.report.criteria || []).map((c: any) => (
+              <div key={c.key} className="flex items-center justify-between rounded-xl border px-3 py-2 text-sm" style={{ borderColor: "var(--border)" }}>
+                <span className="flex items-center gap-2">
+                  {c.ok ? <CheckCircle2 size={15} className="text-emerald-500" /> : <XCircle size={15} className="text-amber-500" />}
+                  {c.label}
+                </span>
+                <b className="text-xs muted">{String(c.value)}</b>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-3 text-xs muted">
+            <span>Profit factor: <b>{center.report.profit_factor}</b></span>
+            <span>Medyan hold: <b>{center.report.median_hold_minutes ?? "—"} dk</b></span>
+            <span className="font-semibold" style={{ color: center.report.live_ready ? "var(--emerald)" : "var(--amber)" }}>{center.report.verdict}</span>
+          </div>
+        </section>
+      )}
+
       <div className="grid gap-4 xl:grid-cols-[1.15fr_.85fr]">
         <PremiumBarChart data={reasons} label="AI Karar Hunisi — Görsel" />
         <PremiumDonut data={exitDonut} label="Exit Sebepleri — Görsel" />
