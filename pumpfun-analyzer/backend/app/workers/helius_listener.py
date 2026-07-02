@@ -61,9 +61,10 @@ def _ws_urls() -> list[str]:
     döner. Public yedek blockSubscribe vermez ama logsSubscribe(mentions) İLETİR;
     mod merdiveni (block→mentions→all) bunu otomatik ele alır."""
     urls = [_ws_url()]
-    fb = (settings.solana_ws_fallback_url or "").strip()
-    if fb and fb not in urls:
-        urls.append(fb)
+    for fb in (settings.solana_ws_fallback_url or "").split(","):
+        fb = fb.strip()
+        if fb and fb not in urls:
+            urls.append(fb)
     return urls
 
 

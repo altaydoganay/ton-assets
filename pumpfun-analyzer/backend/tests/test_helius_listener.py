@@ -122,18 +122,35 @@ def test_block_txs_from_notification():
     assert block_txs_from_notification({}) == []
 
 
-def test_ws_urls_primary_plus_fallback(monkeypatch):
-    """Birincil WS + public yedek (kota 403'ünde rotasyon için)."""
+def test_ws_urls_primary_plus_fallback_pool(monkeypatch):
+    """Birincil WS + VİRGÜLLE ayrık ücretsiz yedek havuzu (kota 403 rotasyonu)."""
     from app import config as cfg
     import app.workers.helius_listener as hl
     monkeypatch.setattr(cfg.settings, "helius_ws_url", "", raising=False)
     monkeypatch.setattr(cfg.settings, "helius_api_key", "", raising=False)
     monkeypatch.setattr(cfg.settings, "solana_ws_url", "wss://chainstack.example/x", raising=False)
-    monkeypatch.setattr(cfg.settings, "solana_ws_fallback_url", "wss://api.mainnet-beta.solana.com", raising=False)
-    assert hl._ws_urls() == ["wss://chainstack.example/x", "wss://api.mainnet-beta.solana.com"]
-    # birincil zaten public ise tekrar eklenmez
+    monkeypatch.setattr(cfg.settings, "solana_ws_fallback_url",
+                        "wss://api.mainnet-beta.solana.com, wss://solana-rpc.publicnode.com", raising=False)
+    assert hl._ws_urls() == ["wss://chainstack.example/x",
+                             "wss://api.mainnet-beta.solana.com",
+                             "wss://solana-rpc.publicnode.com"]
+    # birincil havuzda da varsa tekrar eklenmez
     monkeypatch.setattr(cfg.settings, "solana_ws_url", "wss://api.mainnet-beta.solana.com", raising=False)
-    assert hl._ws_urls() == ["wss://api.mainnet-beta.solana.com"]
+    assert hl._ws_urls() == ["wss://api.mainnet-beta.solana.com", "wss://solana-rpc.publicnode.com"]
+
+
+def test_rpc_fallback_pool_parsing(monkeypatch):
+    """HTTP yedek havuzu virgülle ayrık ayrıştırılır (registry)."""
+    from app import config as cfg
+    from app.adapters.registry import build_chain_provider
+    monkeypatch.setattr(cfg.settings, "helius_api_key", "", raising=False)
+    monkeypatch.setattr(cfg.settings, "helius_rpc_url", "", raising=False)
+    monkeypatch.setattr(cfg.settings, "solana_rpc_url", "https://primary.example", raising=False)
+    monkeypatch.setattr(cfg.settings, "solana_rpc_fallback_url",
+                        "https://a.example, https://b.example ,https://primary.example", raising=False)
+    provider = build_chain_provider()
+    inner = getattr(provider, "_inner", provider)
+    assert inner.endpoints == ["https://primary.example", "https://a.example", "https://b.example"]
 
 
 def test_mode_ladder_on_fallback_prefers_mentions():
