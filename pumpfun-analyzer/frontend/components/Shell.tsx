@@ -22,56 +22,32 @@ import { apiSend, fetcher } from "@/lib/api";
 import { useToast } from "./Toast";
 
 type Mode = "ai" | "copy";
-type NavItem = { href: string; label: string; icon: any; desc?: string };
+type NavItem = { href: string; label: string; icon: any; desc?: string; match?: string[] };
 type NavGroup = { group: string; items: NavItem[] };
 
+// SADELEŞTİRİLMİŞ MENÜ: 5 ana bölüm. İlişkili sayfalar bölüm İÇİNDE sekmelerle
+// gezilir (SectionTabs) — "birbiriyle alakalı şeyler farklı sekmelerde" karmaşası
+// biter. Hiçbir sayfa silinmedi; hepsi kendi hub'ının sekmesi oldu.
+const PORTFOLIO_MATCH = ["/positions", "/history", "/paper", "/live", "/performance"];
+const SETTINGS_MATCH = ["/settings", "/health", "/logs"];
+
 const COPY_NAV: NavGroup[] = [
-  { group: "Copy merkezi", items: [
-    { href: "/overview", label: "Mod Seçimi", icon: LayoutDashboard },
-    { href: "/copy", label: "Copy Trade Paneli", icon: CopyCheck },
-    { href: "/performance", label: "Copy Performansı", icon: LineChart },
-  ]},
-  { group: "Cüzdanlar", items: [
-    { href: "/wallets/leaderboard", label: "Cüzdan Sıralaması", icon: Trophy },
-    { href: "/wallets/discovered", label: "Keşfedilen Cüzdanlar", icon: Search },
-    { href: "/wallets/tracked", label: "Takip Edilenler", icon: Star },
-  ]},
-  { group: "İşlemler", items: [
-    { href: "/events", label: "Cüzdan Olay Akışı", icon: Activity },
-    { href: "/positions", label: "Açık Pozisyonlar", icon: Wallet },
-    // Paper/Canlı detay panelleri Geçmiş sayfasının üstündeki hızlı
-    // sekmelerden açılır (nav sadeleştirme: 3 benzer sayfa → tek giriş).
-    { href: "/history", label: "İşlem Geçmişi", icon: History },
-  ]},
-  { group: "Ayarlar", items: [
-    { href: "/settings/risk", label: "Risk & Copy Ayarları", icon: ShieldAlert },
-    { href: "/settings/live", label: "Canlı Kurulum", icon: Radio },
-    { href: "/settings/api", label: "API ve RPC", icon: Server },
-    { href: "/health", label: "Sistem Sağlığı", icon: HeartPulse },
-    { href: "/logs", label: "Teknik Loglar", icon: ScrollText },
+  { group: "Menü", items: [
+    { href: "/overview", label: "Genel Bakış", icon: LayoutDashboard },
+    { href: "/copy", label: "Copy Merkezi", icon: CopyCheck, desc: "Karar akışı, performans ve ölçüm dönemi" },
+    { href: "/positions", label: "Portföy", icon: Wallet, desc: "Pozisyonlar · Geçmiş · Performans · Sıfırlama", match: PORTFOLIO_MATCH },
+    { href: "/wallets/leaderboard", label: "Cüzdan Keşfi", icon: Trophy, desc: "Sıralama · Keşfedilen · Takip · Olay akışı", match: ["/wallets", "/events"] },
+    { href: "/settings/risk", label: "Ayarlar", icon: SlidersHorizontal, desc: "Risk · Skorlama · Canlı kurulum · Sağlık · Loglar", match: SETTINGS_MATCH },
   ]},
 ];
 
 const AI_NAV: NavGroup[] = [
-  { group: "AI merkezi", items: [
-    { href: "/overview", label: "Mod Seçimi", icon: LayoutDashboard },
-    { href: "/ai", label: "AI Decision Center", icon: BrainCircuit },
-    { href: "/paper", label: "AI Paper Sonuçları", icon: FlaskConical },
-  ]},
-  { group: "Token kararı", items: [
-    { href: "/tokens", label: "Token Analizi", icon: Coins },
-    { href: "/tokens/tracked", label: "Token Performansı", icon: BadgeCheck },
-    { href: "/events", label: "Token Akışı", icon: Activity },
-  ]},
-  { group: "Sonuçlar", items: [
-    { href: "/positions", label: "Açık Pozisyonlar", icon: Wallet },
-    { href: "/history", label: "İşlem Geçmişi", icon: History },
-    { href: "/logs", label: "Karar Günlüğü", icon: ScrollText },
-  ]},
-  { group: "Ayarlar", items: [
-    { href: "/settings/risk", label: "AI Risk Ayarları", icon: SlidersHorizontal },
-    { href: "/settings/live", label: "Canlı Kurulum", icon: Radio },
-    { href: "/health", label: "Sistem Sağlığı", icon: HeartPulse },
+  { group: "Menü", items: [
+    { href: "/overview", label: "Genel Bakış", icon: LayoutDashboard },
+    { href: "/ai", label: "AI Merkezi", icon: BrainCircuit, desc: "Karne, karar akışı ve huni" },
+    { href: "/positions", label: "Portföy", icon: Wallet, desc: "Pozisyonlar · Geçmiş · Performans · Sıfırlama", match: PORTFOLIO_MATCH },
+    { href: "/tokens", label: "Token Keşfi", icon: Coins, desc: "Analiz · İzlenen · Olay akışı", match: ["/tokens", "/events"] },
+    { href: "/settings/risk", label: "Ayarlar", icon: SlidersHorizontal, desc: "Risk · Skorlama · Canlı kurulum · Sağlık · Loglar", match: SETTINGS_MATCH },
   ]},
 ];
 
@@ -142,9 +118,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <div className="space-y-0.5">
             {g.items.map((item) => {
               const Icon = item.icon;
+              // Hub eşleşmesi: alt sayfalar (örn. /history) kendi hub'ını
+              // (Portföy) aktif gösterir — match listesi varsa ona bakılır.
+              const prefixes = item.match ?? [item.href];
               const active = item.href === "/overview"
                 ? pathname === "/" || pathname.startsWith("/overview")
-                : pathname === item.href || pathname.startsWith(item.href + "/");
+                : prefixes.some((p) => pathname === p || pathname.startsWith(p + "/"));
               return (
                 <Link key={item.href} href={item.href} onClick={() => setOpen(false)}
                   className={clsx("nav-link", active && "active")}
@@ -200,7 +179,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-3">
             <span className="hidden text-xs muted xl:inline">Kâr garantisi yok · küçük bakiye ve paper doğrulama önerilir</span>
             <EmergencyStop risk={risk} onChange={() => mutate()} />
-            <span className="badge hidden sm:inline-flex">UI 94</span>
+            <span className="badge hidden sm:inline-flex">UI 95</span>
             <NotificationCenter />
             <WalletConnect />
             <SoundToggle />

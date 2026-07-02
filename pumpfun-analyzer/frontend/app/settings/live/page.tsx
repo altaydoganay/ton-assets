@@ -3,6 +3,7 @@ import useSWR from "swr";
 import Link from "next/link";
 import { fetcher } from "@/lib/api";
 import { PageHeader } from "@/components/Confidence";
+import { SectionTabs } from "@/components/SectionTabs";
 import { Section, Callout, StatCard } from "@/components/ui";
 import { Loading } from "@/components/States";
 import { CheckCircle2, XCircle, Radio, ShieldCheck, Wallet, ArrowRight } from "lucide-react";
@@ -26,6 +27,7 @@ export default function LiveSetup() {
     <div>
       <PageHeader title="📡 Canlı İşlem Kurulumu"
         subtitle="Gerçek parayla işlemin DÜZENEĞİNİ kur — ama istemeden aktifleşmesin." />
+      <SectionTabs group="settings" />
 
       <div className="mb-4">
         <Callout kind={data.is_live_now ? "warn" : "info"}>

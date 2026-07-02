@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { fetcher, apiSend } from "@/lib/api";
 import { PageHeader } from "@/components/Confidence";
+import { SectionTabs } from "@/components/SectionTabs";
 import { Loading } from "@/components/States";
 import { InfoTip } from "@/components/ui";
 
@@ -50,10 +51,11 @@ export default function ApiSettings() {
   return (
     <div>
       <PageHeader
-        title="API ve RPC Ayarları"
-        subtitle="Veri sağlayıcıları .env üzerinden adapter olarak seçilir. Eşikler ve puan ağırlıkları buradan değiştirilebilir."
+        title="Skorlama Ayarları"
+        subtitle="Takip eşikleri ve cüzdan/token puan ağırlıkları. Veri sağlayıcıları .env'den seçilir; canlı durumu aşağıdaki kartta."
         action={<button className="btn-primary" onClick={saveAll}>Kaydet</button>}
       />
+      <SectionTabs group="settings" />
 
       <div className="card mb-4">
         <div className="mb-3 flex items-center gap-2">

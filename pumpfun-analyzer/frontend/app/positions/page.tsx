@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { fetcher, apiSend, shortAddr, fmtNum } from "@/lib/api";
 import { pumpfunToken, solscanToken } from "@/lib/links";
 import { PageHeader } from "@/components/Confidence";
+import { SectionTabs } from "@/components/SectionTabs";
 import { StatCard } from "@/components/ui";
 import { CountUp } from "@/components/CountUp";
 import { EmptyState } from "@/components/EmptyState";
@@ -161,11 +162,11 @@ export default function Positions() {
       <PageHeader title="Açık Pozisyonlar" icon={<Wallet size={22} />}
         subtitle="DB tahmini açık pozisyonlar + gerçek cüzdan snapshot'ı. Canlı PnL kesin fill değildir; gerçek cüzdan bakiyesi referanstır."
         action={
-          <button className="btn-danger" disabled={!!busy} onClick={resetPaper}
-                  title="Tüm paper pozisyon/işlemleri temizle (canlı ve gerçek cüzdan etkilenmez)">
-            <RefreshCw size={14} /> Paper'ı Sıfırla
-          </button>
+          <Link href="/history#reset" className="btn" title="Tüm sıfırlama işlemleri tek yerde">
+            <RefreshCw size={14} /> Sıfırlama Merkezi
+          </Link>
         } />
+      <SectionTabs group="portfolio" />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Gerçekleşmemiş PnL" tone={totalUnreal >= 0 ? "var(--emerald)" : "var(--rose)"}

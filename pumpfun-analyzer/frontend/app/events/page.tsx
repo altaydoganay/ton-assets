@@ -2,6 +2,7 @@
 import Link from "next/link";
 import useSWR from "swr";
 import { PageHeader } from "@/components/Confidence";
+import { SectionTabs } from "@/components/SectionTabs";
 import { Fetch } from "@/components/Fetch";
 import { Callout } from "@/components/ui";
 import { fetcher, apiSend, shortAddr, fmtNum } from "@/lib/api";
@@ -46,6 +47,7 @@ export default function Events() {
     <div>
       <PageHeader title="Canlı Olay Akışı"
         subtitle="Veri akışı modunu seç — kopya işlem hızı vs. Helius kredisi dengesi." />
+      <SectionTabs group="auto-events" />
 
       <div className="mb-4 grid gap-3 md:grid-cols-3">
         {MODES.map((m) => {

@@ -1,5 +1,6 @@
 "use client";
 import { PageHeader } from "@/components/Confidence";
+import { SectionTabs } from "@/components/SectionTabs";
 import { TradeTable } from "@/components/TradeTable";
 import { Callout } from "@/components/ui";
 import { apiSend } from "@/lib/api";
@@ -26,6 +27,7 @@ export default function Live() {
       {dialog}
       <PageHeader title="Canlı İşlemler" subtitle="Gerçek zincir üstü işlemler — yalnızca Risk Ayarları'ndan canlı mod açıkken çalışır"
         action={<button className="btn-danger" onClick={emergency}>⛔ Acil Durdurma</button>} />
+      <SectionTabs group="portfolio" />
 
       <div className="mb-4">
         <Callout kind="warn">

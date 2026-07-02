@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { AlertTriangle, Bell, CheckCircle2, Filter, Search, XCircle } from "lucide-react";
 import { PageHeader } from "@/components/Confidence";
+import { SectionTabs } from "@/components/SectionTabs";
 import { PremiumEmpty } from "@/components/PremiumUI";
 import { fetcher } from "@/lib/api";
 
@@ -14,7 +15,8 @@ export default function LogsPage() {
   const levels = ["all", "info", "warning", "error"];
   return (
     <div className="space-y-5">
-      <PageHeader title="Karar Günlüğü ve Teknik Loglar" icon={<Bell size={22} />} subtitle="Günlük kullanımda AI/Copy panellerini oku. Bu ekran hata, uyarı ve teknik olayların detay deposudur." />
+      <PageHeader title="Teknik Loglar" icon={<Bell size={22} />} subtitle="Hata, uyarı ve teknik olayların detay deposu. Günlük kullanımda AI/Copy panellerindeki karar akışını oku." />
+      <SectionTabs group="settings" />
       <div className="card flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="flex flex-wrap gap-2">
           {levels.map((x) => <button key={x} className={level === x ? "chip active" : "chip"} onClick={() => setLevel(x)}><Filter size={13} /> {x === "all" ? "Tümü" : x}</button>)}

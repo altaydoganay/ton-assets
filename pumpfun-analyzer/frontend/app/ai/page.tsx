@@ -134,10 +134,7 @@ export default function AiTradePage() {
               {resetStatus?.since_counts && <> · Yeni dönem alım: <b>{resetStatus.since_counts.buys}</b> · PnL: <b>{sol(resetStatus.since_counts.realized_pnl_sol)}</b></>}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button className="btn" onClick={() => resetAi(false)}><RotateCcw size={15} /> İstatistikleri sıfırla</button>
-            <button className="btn-danger" onClick={() => resetAi(true)}><Trash2 size={15} /> AI paper alımlarını temizle</button>
-          </div>
+          <Link href="/history#reset" className="btn"><RotateCcw size={15} /> Sıfırlama Merkezi</Link>
         </div>
       </section>
 

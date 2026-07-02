@@ -3,6 +3,7 @@ import useSWR from "swr";
 import Link from "next/link";
 import { fetcher, shortAddr } from "@/lib/api";
 import { PageHeader } from "@/components/Confidence";
+import { SectionTabs } from "@/components/SectionTabs";
 import { Section, StatCard } from "@/components/ui";
 import { Loading } from "@/components/States";
 import { Coins, TrendingUp, Target } from "lucide-react";
@@ -19,6 +20,7 @@ export default function TokenPerformance() {
     <div>
       <PageHeader title="🪙 Token Performansı"
         subtitle="Bizim aldığımız token'lerin sonucu — hangisi kazandırdı, hangisi kaybettirdi (paper)." />
+      <SectionTabs group="tokens" />
 
       <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Token Sayısı" value={data.length} tone="var(--violet)" icon={<Coins size={18} />} />

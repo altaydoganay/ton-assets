@@ -1,7 +1,9 @@
 "use client";
+import Link from "next/link";
 import useSWR from "swr";
-import { RefreshCw, ShieldCheck, TimerReset, RotateCcw, Trash2 } from "lucide-react";
+import { RefreshCw, ShieldCheck, TimerReset, RotateCcw } from "lucide-react";
 import { PageHeader } from "@/components/Confidence";
+import { SectionTabs } from "@/components/SectionTabs";
 import { TradeTable } from "@/components/TradeTable";
 import { Callout, InfoTip, StatCard } from "@/components/ui";
 import { useConfirm } from "@/components/ConfirmDialog";
@@ -56,6 +58,7 @@ export default function Paper() {
         subtitle="Gerçek para kullanmadan simüle edilen işlemler. AI modunda açık pozisyonları TP / SL / trailing / max-hold yöneticisi kapatır."
         action={<button className="btn" onClick={runExit}><RefreshCw size={15} /> AI çıkışı kontrol et</button>}
       />
+      <SectionTabs group="portfolio" />
 
       <section className="card reset-zone">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -69,10 +72,7 @@ export default function Paper() {
               {resetStatus?.since_counts && <> · Yeni dönem alım: <b>{resetStatus.since_counts.buys}</b> · PnL: <b>{resetStatus.since_counts.realized_pnl_sol} SOL</b></>}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button className="btn" onClick={() => resetPaper(false)}><RotateCcw size={15} /> İstatistiği sıfırla</button>
-            <button className="btn-danger" onClick={() => resetPaper(true)}><Trash2 size={15} /> Paper alımları temizle</button>
-          </div>
+          <Link href="/history#reset" className="btn"><RotateCcw size={15} /> Sıfırlama Merkezi</Link>
         </div>
       </section>
 

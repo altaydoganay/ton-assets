@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { fetcher, apiSend, fmtNum } from "@/lib/api";
 import { PageHeader } from "@/components/Confidence";
+import { SectionTabs } from "@/components/SectionTabs";
 import { Section, Callout, InfoTip } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import { useConfirm } from "@/components/ConfirmDialog";
@@ -217,7 +218,8 @@ export default function RiskSettings() {
         action={<div className="flex flex-wrap gap-2">
           <button className="btn" disabled={testing} onClick={runTest}>🧪 {testing ? "Çalışıyor…" : "Test"}</button>
           <button className="btn-danger" onClick={emergencyStop}>⛔ Acil Durdurma</button>
-          <button className="btn-primary" onClick={save}><Save size={15} /> Kaydet</button>
+          <button className="btn-primary" onClick={save}><Save size={15} />
+      <SectionTabs group="settings" /> Kaydet</button>
         </div>} />
 
       {form.emergency_stop && <Callout kind="warn">⛔ Acil durdurma etkin. Yeni işlem açılmaz. Motoru tekrar açıp kaydedince bu kilit temizlenir.</Callout>}

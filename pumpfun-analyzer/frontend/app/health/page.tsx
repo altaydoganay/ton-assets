@@ -1,5 +1,6 @@
 "use client";
 import { PageHeader } from "@/components/Confidence";
+import { SectionTabs } from "@/components/SectionTabs";
 import { Fetch } from "@/components/Fetch";
 import { InfoTip } from "@/components/ui";
 
@@ -65,6 +66,7 @@ export default function Health() {
   return (
     <div>
       <PageHeader title="Sistem Sağlığı" subtitle="Servis durumu, veri sağlayıcı sağlığı ve aktif yapılandırma" />
+      <SectionTabs group="settings" />
       <Fetch<any> path="/health" refreshInterval={10000}>
         {(h) => (
           <div className="grid gap-4 lg:grid-cols-2">

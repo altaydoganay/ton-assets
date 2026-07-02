@@ -4,6 +4,7 @@ import Link from "next/link";
 import useSWR from "swr";
 import { fetcher, apiSend, API_URL } from "@/lib/api";
 import { PageHeader } from "@/components/Confidence";
+import { SectionTabs } from "@/components/SectionTabs";
 import { StatCard, Section } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import { useConfirm } from "@/components/ConfirmDialog";
@@ -54,9 +55,10 @@ export default function Performance() {
         subtitle="Paper işlem sonuçları — kâr/zarar, başarı oranı ve eğri"
         action={<div className="flex flex-wrap gap-2">
           <a className="btn" href={`${API_URL}/export/trades.csv`}><Download size={15} /> Dışa aktar</a>
-          <button className="btn-danger" onClick={resetPaper}><RotateCcw size={15} /> Sıfırla</button>
+          <Link href="/history#reset" className="btn"><RotateCcw size={15} /> Sıfırlama Merkezi</Link>
         </div>}
       />
+      <SectionTabs group="portfolio" />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Toplam PnL (SOL)" value={perf.total_pnl_sol.toFixed(3)} icon={<TrendingUp size={18} />}

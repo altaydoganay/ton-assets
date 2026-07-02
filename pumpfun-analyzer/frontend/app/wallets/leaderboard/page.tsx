@@ -4,6 +4,7 @@ import useSWR from "swr";
 import Link from "next/link";
 import { fetcher, shortAddr, apiSend } from "@/lib/api";
 import { PageHeader } from "@/components/Confidence";
+import { SectionTabs } from "@/components/SectionTabs";
 import { Section } from "@/components/ui";
 import { Loading } from "@/components/States";
 import { useToast } from "@/components/Toast";
@@ -235,6 +236,7 @@ export default function Leaderboard() {
             {scanning ? "Taranıyor…" : "Yeniden Tara"}
           </button>
         } />
+      <SectionTabs group="wallets" />
 
       {/* Eleme — kaliteye göre süzme */}
       {data.length > 30 && (

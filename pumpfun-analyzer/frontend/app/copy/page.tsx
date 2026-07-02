@@ -84,10 +84,7 @@ export default function CopyTradePage() {
             <div className="flex items-center gap-2 font-extrabold"><RotateCcw size={17} className="text-emerald-500" /> Copy temiz ölçüm dönemi <InfoTip title="Copy sıfırlama">Güncellemelerden önceki copy paper sonuçları karıştıysa yeni dönem başlat. İstatistik sıfırlama silmez, paper temizleme AI dışı copy simülasyon kayıtlarını siler.</InfoTip></div>
             <div className="mt-1 text-xs muted">Başlangıç: {resetStatus?.baseline_at ? new Date(resetStatus.baseline_at).toLocaleString("tr-TR") : "Henüz sıfırlanmadı"}{resetStatus?.since_counts && <> · Yeni dönem alım: <b>{resetStatus.since_counts.buys}</b> · PnL: <b>{fmtNum(resetStatus.since_counts.realized_pnl_sol, 4)} SOL</b></>}</div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button className="btn" onClick={() => resetCopy(false)}><RotateCcw size={15} /> İstatistiği sıfırla</button>
-            <button className="btn-danger" onClick={() => resetCopy(true)}><Trash2 size={15} /> Copy paper temizle</button>
-          </div>
+          <Link href="/history#reset" className="btn"><RotateCcw size={15} /> Sıfırlama Merkezi</Link>
         </div>
       </section>
 
