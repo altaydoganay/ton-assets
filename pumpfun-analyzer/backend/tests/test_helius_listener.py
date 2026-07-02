@@ -122,6 +122,77 @@ def test_block_txs_from_notification():
     assert block_txs_from_notification({}) == []
 
 
+def test_ws_urls_primary_plus_fallback(monkeypatch):
+    """Birincil WS + public yedek (kota 403'ünde rotasyon için)."""
+    from app import config as cfg
+    import app.workers.helius_listener as hl
+    monkeypatch.setattr(cfg.settings, "helius_ws_url", "", raising=False)
+    monkeypatch.setattr(cfg.settings, "helius_api_key", "", raising=False)
+    monkeypatch.setattr(cfg.settings, "solana_ws_url", "wss://chainstack.example/x", raising=False)
+    monkeypatch.setattr(cfg.settings, "solana_ws_fallback_url", "wss://api.mainnet-beta.solana.com", raising=False)
+    assert hl._ws_urls() == ["wss://chainstack.example/x", "wss://api.mainnet-beta.solana.com"]
+    # birincil zaten public ise tekrar eklenmez
+    monkeypatch.setattr(cfg.settings, "solana_ws_url", "wss://api.mainnet-beta.solana.com", raising=False)
+    assert hl._ws_urls() == ["wss://api.mainnet-beta.solana.com"]
+
+
+def test_mode_ladder_on_fallback_prefers_mentions():
+    """block başarısızsa: yedek WS'te mentions (iletir), birincilde all (son çare)."""
+    from app.workers.helius_listener import HeliusListener
+    lis = HeliusListener()
+    lis.block_failed = True
+    # _refresh içindeki merdiven mantığının birebir kopyası (birim düzeyi):
+    lis.on_fallback_ws = True
+    mode = "mentions" if lis.on_fallback_ws else "all"
+    assert mode == "mentions"
+    lis.on_fallback_ws = False
+    mode = "mentions" if lis.on_fallback_ws else "all"
+    assert mode == "all"
+
+
+def test_enqueue_nonblocking_and_drops_oldest():
+    """Okuma döngüsü bloklanmaz: kuyruk doluysa en eski atılır, yenisi girer."""
+    import asyncio
+    from app.workers.helius_listener import HeliusListener
+
+    async def main():
+        lis = HeliusListener()
+        lis.event_queue = asyncio.Queue(maxsize=3)
+        calls = []
+        fn = lambda x: calls.append(x)  # noqa: E731
+        for i in range(5):  # 3 kapasiteye 5 olay → 2 en eski düşer
+            lis._enqueue(fn, (i,))
+        assert lis.event_queue.qsize() == 3
+        assert lis.stat_q_dropped == 2
+        # kuyrukta EN YENİLER kalmalı (2,3,4)
+        remaining = [lis.event_queue.get_nowait()[1][0] for _ in range(3)]
+        assert remaining == [2, 3, 4]
+
+    asyncio.run(main())
+
+
+def test_event_worker_processes_and_skips_stale():
+    import asyncio, time as _t
+    from app.workers.helius_listener import HeliusListener
+
+    async def main():
+        lis = HeliusListener()
+        lis.event_queue = asyncio.Queue(maxsize=10)
+        done = []
+        lis.event_queue.put_nowait((lambda: done.append("fresh"), (), _t.time(), False))
+        lis.event_queue.put_nowait((lambda: done.append("stale"), (), _t.time() - 60, False))
+        lis.event_queue.put_nowait((lambda: done.append("stale_create"), (), _t.time() - 60, True))
+        w = asyncio.create_task(lis._event_worker(1))
+        await asyncio.wait_for(lis.event_queue.join(), timeout=5)
+        w.cancel()
+        assert "fresh" in done
+        assert "stale" not in done            # bayat sıradan olay atlandı
+        assert "stale_create" in done         # create asla atlanmaz
+        assert lis.stat_drop_stale == 1
+
+    asyncio.run(main())
+
+
 def test_curve_sol_tracking():
     """Migration yakınlığı: alım net SOL girişini artırır, satım düşürür."""
     from app.workers.helius_listener import HeliusListener

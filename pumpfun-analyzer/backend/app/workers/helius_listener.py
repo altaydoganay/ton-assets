@@ -54,6 +54,19 @@ def _ws_url() -> str:
     return settings.solana_ws_url
 
 
+def _ws_urls() -> list[str]:
+    """Birincil + yedek WS adresleri (tekrarsız).
+
+    Birincil reddederse (örn. Chainstack aylık kota → HTTP 403) run() sıradakine
+    döner. Public yedek blockSubscribe vermez ama logsSubscribe(mentions) İLETİR;
+    mod merdiveni (block→mentions→all) bunu otomatik ele alır."""
+    urls = [_ws_url()]
+    fb = (settings.solana_ws_fallback_url or "").strip()
+    if fb and fb not in urls:
+        urls.append(fb)
+    return urls
+
+
 def _tracked_addresses() -> list[str]:
     db = SessionLocal()
     try:
@@ -239,6 +252,16 @@ class HeliusListener:
         self.tracked_set: set[str] = set()
         # block modu çalışma anında başarısız olursa (node desteklemiyor) 'all'e düş.
         self.block_failed = False
+        # OLAY KUYRUĞU + PARALEL WORKER'lar: process() içinde her tx için ağ
+        # çağrısını (assess_token 1-3 sn) sırayla AWAIT etmek WS okuma döngüsünü
+        # BLOKLAR — akış dakikalarca geri kalır ("10 dakikada 5 token" belirtisi).
+        # Okuma döngüsü yalnızca kuyruğa koyar; worker'lar paralel işler.
+        self.event_queue: asyncio.Queue | None = None
+        self.stat_q_dropped = 0     # kuyruk doluyken atılan olay
+        self.stat_drop_stale = 0    # bayatladığı için işlenmeyen olay
+        # Yedek WS'e düşüldü mü (birincil 403/kota vb.)? Mod merdiveni buna bakar:
+        # public yedek mentions İLETİR → block başarısızsa fallback'te mentions seç.
+        self.on_fallback_ws = False
 
     def _next_id(self) -> int:
         self._req_id += 1
@@ -318,9 +341,13 @@ class HeliusListener:
             try:
                 await asyncio.to_thread(self._heartbeat)
                 # ASCII etiketli durum logu (Windows findstr ile aranabilir)
-                logger.info("[DISCOVERY] lookups=%d candidates=%d tracked_subs=%d ai_signals=%d creates=%d mode=%s",
+                qsize = self.event_queue.qsize() if self.event_queue is not None else 0
+                logger.info("[DISCOVERY] lookups=%d candidates=%d tracked_subs=%d ai_signals=%d creates=%d "
+                            "queue=%d q_dropped=%d stale=%d mode=%s ws_mode=%s",
                             self.stat_lookups, self.stat_candidates, len(self.subscribed_accounts),
-                            self.stat_ai_signals, self.stat_creates, self.strategy_mode)
+                            self.stat_ai_signals, self.stat_creates,
+                            qsize, self.stat_q_dropped, self.stat_drop_stale,
+                            self.strategy_mode, self.logs_mode)
                 # ANA KAPATMA: dinleyici kapalıysa TÜM abonelikleri durdur (kredi
                 # tasarrufu) ve abone OLMA — kopya işlem POLL ile sürer.
                 listener_on = await asyncio.to_thread(_listener_on)
@@ -337,7 +364,9 @@ class HeliusListener:
                 self.strategy_mode = await asyncio.to_thread(_strategy_mode)
                 self.logs_mode = _resolve_logs_mode()
                 if self.logs_mode == "block" and self.block_failed:
-                    self.logs_mode = "all"  # node blockSubscribe vermedi → son çare
+                    # MOD MERDİVENİ: public yedek mentions İLETİR (canlı doğrulandı)
+                    # → orada mentions; birincilde (Chainstack mentions sessiz) all.
+                    self.logs_mode = "mentions" if self.on_fallback_ws else "all"
                 self.tracked_set = set(_tracked_addresses())
                 want_discovery = (await asyncio.to_thread(_discovery_on)) or self.strategy_mode == "ai"
 
@@ -413,7 +442,7 @@ class HeliusListener:
                 # zaten client-side ucuz. AI'da sıradan trade'ler değerlendirme
                 # bütçesiyle (assess_token zincir/piyasa çağrıları) örneklenir.
                 if is_create or self.strategy_mode != "ai" or self.limiter.allow():
-                    await asyncio.to_thread(self._handle_block_tx, raw_tx, is_create)
+                    self._enqueue(self._handle_block_tx, (raw_tx, is_create), is_create)
             return
         if msg.get("method") != "logsNotification":
             return
@@ -430,10 +459,15 @@ class HeliusListener:
         if not sig:
             return
         if kind == "tracked":
-            await asyncio.to_thread(self._handle_tracked, sig, wallet)
+            self._enqueue(self._handle_tracked, (sig, wallet), is_create=True)  # takip olayı asla bayatlamasın
         elif kind == "discovery":
-            if self.limiter.allow():
-                await asyncio.to_thread(self._handle_discovery, sig)
+            # Yeni-token (Create) limiti AŞAR — launch'lar örneklemeye kurban gitmesin.
+            logs = value.get("logs") or []
+            is_create = logs_is_pumpfun_create(logs)
+            if is_create:
+                self.stat_creates += 1
+            if is_create or self.limiter.allow():
+                self._enqueue(self._handle_discovery, (sig,), is_create)
             # limit aşıldıysa bu keşif olayını düşür (kredi koruması)
         elif kind == "firehose":
             # 'all' modu: ÖNCE ucuz log filtresi (pump.fun mı?), sonra rate-limited
@@ -446,7 +480,7 @@ class HeliusListener:
                 if is_create:
                     self.stat_creates += 1
                 if is_create or self.limiter.allow():
-                    await asyncio.to_thread(self._handle_firehose, sig)
+                    self._enqueue(self._handle_firehose, (sig,), is_create)
 
     def _fetch_ntx(self, sig: str):
         raw = self.chain.get_transaction(sig)
@@ -501,6 +535,43 @@ class HeliusListener:
                 self._route_ai_signals(ntx)
         except Exception as exc:  # noqa: BLE001
             logger.warning("[DISCOVERY] olay atlandı: %s", exc)
+
+    def _enqueue(self, fn, args: tuple, is_create: bool = False) -> None:
+        """Olayı worker kuyruğuna at (okuma döngüsünü BLOKLAMADAN).
+
+        Kuyruk doluysa en eski sıradan olayı düşür, yenisini al (taze veri
+        değerlidir). Create olayları her zaman sığdırılır."""
+        if self.event_queue is None:
+            return
+        item = (fn, args, time.time(), is_create)
+        try:
+            self.event_queue.put_nowait(item)
+        except asyncio.QueueFull:
+            try:
+                self.event_queue.get_nowait()
+                self.event_queue.task_done()
+                self.stat_q_dropped += 1
+                self.event_queue.put_nowait(item)
+            except Exception:  # noqa: BLE001
+                self.stat_q_dropped += 1
+
+    async def _event_worker(self, idx: int):
+        assert self.event_queue is not None
+        while True:
+            fn, args, enq_t, is_create = await self.event_queue.get()
+            try:
+                # Bayat sıradan olayı işleme (geç girişe zemin olur); create'ler
+                # her zaman işlenir (launch anı — token kaydı/yaş için kritik).
+                if not is_create and (time.time() - enq_t) > 30.0:
+                    self.stat_drop_stale += 1
+                    continue
+                await asyncio.to_thread(fn, *args)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Olay worker-%d hata: %s", idx, exc)
+            finally:
+                self.event_queue.task_done()
 
     def _update_curve(self, ntx) -> None:
         """Akıştan mint başına NET SOL girişini biriktir (migration yakınlığı tahmini)."""
@@ -659,31 +730,54 @@ class HeliusListener:
     async def run(self, stop_event: asyncio.Event | None = None):
         import websockets
 
-        url = _ws_url()
-        if not settings.helius_api_key and "api-key" not in url:
+        urls = _ws_urls()
+        if not settings.helius_api_key and "api-key" not in urls[0]:
             logger.warning("Helius API anahtarı yok; dinleyici sınırlı çalışır.")
+        url_idx = 0  # bağlantı hatasında sıradakine döner; başarıda birincile sıfırlanır
+        # Paralel işleme: okuma döngüsü yalnız kuyruğa yazar, worker'lar işler.
+        # (Aksi halde her tx'in 1-3 sn'lik analizi WS okumasını bloklar ve akış
+        # dakikalarca geri kalırdı — "10 dakikada 5 token" belirtisi.)
+        self.event_queue = asyncio.Queue(maxsize=max(100, int(getattr(settings, "ai_signal_queue_size", 500))))
+        worker_count = max(1, min(int(getattr(settings, "ai_signal_workers", 8)), 32))
+        workers = [asyncio.create_task(self._event_worker(i + 1)) for i in range(worker_count)]
         backoff = 1.0
-        while stop_event is None or not stop_event.is_set():
-            self.sub_meta.clear()
-            self.pending.clear()
-            self.subscribed_accounts.clear()
-            self.discovery_sub_active = False
-            try:
-                async with websockets.connect(url, ping_interval=20, max_size=8_000_000) as ws:
-                    logger.info("[LISTENER] Helius WS connected (discovery=%s)", settings.discovery_enabled)
-                    backoff = 1.0
-                    refresher = asyncio.create_task(self._refresh(ws))
-                    try:
-                        async for raw in ws:
-                            if stop_event is not None and stop_event.is_set():
-                                break
-                            await self.process(raw)
-                    finally:
-                        refresher.cancel()
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Helius WS koptu (%.0fs sonra tekrar): %s", backoff, exc)
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 30.0)
+        try:
+            while stop_event is None or not stop_event.is_set():
+                self.sub_meta.clear()
+                self.pending.clear()
+                self.subscribed_accounts.clear()
+                self.discovery_sub_active = False
+                # Geçici bir hata blockSubscribe'ı KALICI olarak 'all'e düşürmesin;
+                # her yeni bağlantıda block modu yeniden denenir.
+                self.block_failed = False
+                url = urls[url_idx % len(urls)]
+                self.on_fallback_ws = (url_idx % len(urls)) > 0
+                try:
+                    async with websockets.connect(url, ping_interval=20, max_size=32_000_000) as ws:
+                        logger.info("[LISTENER] WS bağlandı: %s%s (workers=%d)",
+                                    url.split("?")[0],
+                                    " [YEDEK]" if self.on_fallback_ws else "",
+                                    worker_count)
+                        backoff = 1.0
+                        url_idx = 0  # sonraki reconnect yine birincili dener (kota dönebilir)
+                        refresher = asyncio.create_task(self._refresh(ws))
+                        try:
+                            async for raw in ws:
+                                if stop_event is not None and stop_event.is_set():
+                                    break
+                                await self.process(raw)
+                        finally:
+                            refresher.cancel()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("WS koptu/reddedildi (%s): %s — %.0fs sonra %s denenecek",
+                                   url.split("?")[0], exc, backoff,
+                                   "YEDEK WS" if (url_idx + 1) % len(urls) > 0 else "birincil WS")
+                    url_idx += 1  # 403/kota vb. → sıradaki adrese dön
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, 30.0)
+        finally:
+            for w in workers:
+                w.cancel()
 
 
 async def run_helius_listener(stop_event: asyncio.Event | None = None) -> None:

@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     app_name: str = "Pump.fun Cüzdan Analizcisi"
     # SÜRÜM/BUILD numarası — her anlamlı güncellemede artar. Panelin üst barında
     # ve /health'te gösterilir; deploy'un doğru kodu aldığını buradan doğrularsın.
-    app_build: str = "92"
-    app_build_label: str = "gerçek create zamanı + migration yakınlığı (curve SOL) + AI Paper Karnesi + temizlik (nav/LF/pytest)"
+    app_build: str = "93"
+    app_build_label: str = "akış hızı: WS okuma döngüsü kuyruk+worker ile serbest + Chainstack kota 403 için WS yedeği ve mod merdiveni (block→mentions→all)"
     environment: Literal["development", "production", "test"] = "development"
     api_prefix: str = "/api"
     secret_key: str = Field(default="degistir-bu-anahtari", description="Uygulama imza anahtarı")
@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     # (getTransaction vb.) kullanılmaya devam eder. Public RPC bu metoda izin verir.
     solana_rpc_fallback_url: str = "https://api.mainnet-beta.solana.com"
     solana_ws_url: str = "wss://api.mainnet-beta.solana.com"
+    # Yedek WS: birincil WS bağlantısı reddedilirse (örn. Chainstack aylık kota
+    # dolunca HTTP 403) dinleyici bu adrese döner. Public node blockSubscribe
+    # DESTEKLEMEZ ama logsSubscribe(mentions) İLETİR (canlı doğrulandı) →
+    # mod merdiveni: block → mentions → all.
+    solana_ws_fallback_url: str = "wss://api.mainnet-beta.solana.com"
     helius_api_key: str = ""
     helius_rpc_url: str = ""
     helius_ws_url: str = ""  # boşsa api-key'den üretilir
