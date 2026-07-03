@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { Fetch } from "./Fetch";
 import { shortAddr, fmtNum } from "@/lib/api";
+import { ShareTradeButton } from "./ShareTradeButton";
 
 export function TradeTable({ path, emptyLabel, live }: { path: string; emptyLabel?: string; live?: boolean }) {
   return (
@@ -11,7 +12,7 @@ export function TradeTable({ path, emptyLabel, live }: { path: string; emptyLabe
           <table className="w-full text-sm">
             <thead><tr className="text-left muted border-b" style={{ borderColor: "var(--border)" }}>
               <th className="pb-2">Zaman</th><th>Cüzdan</th><th>Token</th><th>Yön</th><th>SOL</th>
-              <th>PnL (SOL)</th>{live ? <><th>Durum</th><th>Hata</th></> : <th>Açık</th>}
+              <th>PnL (SOL)</th>{live ? <><th>Durum</th><th>Hata</th></> : <th>Açık</th>}<th>Kart</th>
             </tr></thead>
             <tbody>
               {rows.map((r) => {
@@ -38,6 +39,7 @@ export function TradeTable({ path, emptyLabel, live }: { path: string; emptyLabe
                     ) : (
                       <td className="muted">{r.is_open ? "Evet" : "Hayır"}</td>
                     )}
+                    <td><ShareTradeButton row={r} kind={live ? "live" : "paper"} /></td>
                   </tr>
                 );
               })}
