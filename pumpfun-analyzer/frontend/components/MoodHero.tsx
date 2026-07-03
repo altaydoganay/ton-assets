@@ -58,7 +58,7 @@ export function MoodHero() {
         <div>
           <div className="mb-2 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold"
             style={{ borderColor: `color-mix(in srgb, ${pnlColor} 45%, var(--border))`, color: pnlColor }}>
-            <BrandMark size={16} /> Altay Analysis Bot
+            <BrandMark size={16} /> TradeFable
           </div>
           <h1 className="flex items-center gap-2 text-3xl font-extrabold tracking-tight">
             <MoodIcon size={26} style={{ color: mood === "fire" ? "#f97316" : mood === "frost" ? "var(--sky)" : "var(--brand)" }} />

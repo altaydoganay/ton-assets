@@ -177,10 +177,20 @@ export async function renderTradeCard(canvas: HTMLCanvasElement, d: TradeCardDat
   ctx.fillStyle = t.soft;
   ctx.fillText(t.label, X + 22, 489);
 
-  // Marka + tarih
-  ctx.font = `900 26px ${F}`;
-  ctx.fillStyle = "#e6edf7";
-  ctx.fillText("ALTAY · AI Trade Panel", X, H - 32);
+  // Marka: logo + "TradeFable" (Trade beyaz · Fable yeşil)
+  let tx = X;
+  try {
+    const logo = await loadImg("/brand/tradefable-mark.png");
+    ctx.drawImage(logo, X, H - 70, 46, 46);
+    tx = X + 58;
+  } catch { /* logo yoksa sadece yazı */ }
+  ctx.font = `900 28px ${F}`;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText("Trade", tx, H - 34);
+  const tW = ctx.measureText("Trade").width;
+  ctx.fillStyle = "#22c55e";
+  ctx.fillText("Fable", tx + tW, H - 34);
+  // tarih
   if (d.when) {
     ctx.font = `600 20px ${F}`;
     ctx.fillStyle = "#8592ab";

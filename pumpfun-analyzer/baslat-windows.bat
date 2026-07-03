@@ -12,6 +12,6 @@ if not exist ".env" (
   )
 )
 
-echo Altay Analysis Bot baslatiliyor...
+echo TradeFable baslatiliyor...
 docker compose up --build
 pause
