@@ -1,48 +1,81 @@
 "use client";
-import { useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 
 /**
  * Kâr/Zarar paylaşım kartı (banner).
  *
- * Bağımlılıksız, tek parça SVG üretir; PNG olarak indirilebilir. İllüstrasyonlar
- * TELİFSİZDİR: SpongeBob/Pepe/He-Man gibi karakterler DEĞİL, kendi emoji tabanlı
- * "mizah kademelerimiz" kullanılır (kâr yüzdesine göre otomatik seçilir).
+ * Kullanıcının verdiği maskot arka planları (frontend/public/mascots/*.jpg)
+ * üzerine işlem bilgileri canvas ile yazılır. Maskot, pozisyonun sonucuna göre
+ * OTOMATİK seçilir: artıda sevinen maskotlardan, ekside üzülen/sinirlenen
+ * maskotlardan rastgele (ama aynı işlem için sabit) biri gelir.
  */
 
 export type TradeCardData = {
-  symbol: string;          // token sembolü ya da kısa mint
-  pnlPct: number;          // yüzde (ör. +54.15)
-  initialSol: number;      // giriş maliyeti (SOL)
-  worthSol: number;        // güncel/çıkış değeri (SOL)
-  mode?: "ai" | "copy";    // rozet
-  kind?: "paper" | "live"; // alt bilgi
-  when?: string;           // ISO tarih (opsiyonel)
+  symbol: string;
+  pnlPct: number;
+  initialSol: number;
+  worthSol: number;
+  mode?: "ai" | "copy";
+  kind?: "paper" | "live";
+  when?: string;
+  mascot?: string;          // elle seçim (opsiyonel)
 };
 
-type Tier = {
-  key: string;
-  emoji: string;
-  label: string;    // Türkçe mizah başlığı
-  accent: string;   // ana vurgu rengi
-  glow: string;     // arka ışıma
-};
+// Sevinen / güvenli maskotlar → ARTI pozisyon
+export const MASCOTS_POSITIVE = [
+  "01_win_frog_happy",
+  "07_confidence_lion_proud",
+  "10_fast_entry_rabbit_excited",
+  "11_whale_wallet_confident",
+];
+// Üzülen / sinirlenen / panikleyen maskotlar → EKSİ pozisyon
+export const MASCOTS_NEGATIVE = [
+  "02_loss_turtle_sad",
+  "03_bad_trade_bull_angry",
+  "05_volatility_hamster_panic",
+  "06_rug_risk_fox_suspicious",
+  "09_loss_penguin_crying",
+];
 
-/** Kâr yüzdesine göre kademe (mizah + renk). */
-export function tierFor(pct: number): Tier {
-  if (pct >= 100) return { key: "moon", emoji: "🚀", label: "AYA GİDİYORUZ", accent: "#22d3ee", glow: "#0e7490" };
-  if (pct >= 30)  return { key: "fire", emoji: "🔥", label: "COŞTU", accent: "#34d399", glow: "#065f46" };
-  if (pct >= 5)   return { key: "win",  emoji: "😎", label: "CEBE KOYDUK", accent: "#4ade80", glow: "#166534" };
-  if (pct >= 0)   return { key: "flat_up", emoji: "🙂", label: "UFAK AMA ARTI", accent: "#86efac", glow: "#14532d" };
-  if (pct >= -15) return { key: "dip",  emoji: "😐", label: "UFAK TIRPAN", accent: "#fbbf24", glow: "#92400e" };
-  if (pct >= -40) return { key: "loss", emoji: "😵", label: "CANIMIZ YANDI", accent: "#fb7185", glow: "#9f1239" };
-  return { key: "rekt", emoji: "💀", label: "REKT OLDUK", accent: "#ef4444", glow: "#7f1d1d" };
+export function mascotSrc(name: string): string {
+  return `/mascots/${name}.jpg`;
 }
 
-const W = 1200, H = 675;
-
-function esc(s: string): string {
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+/** Pozisyona göre maskot seç — aynı işlem hep aynı maskotu gösterir. */
+export function pickMascot(d: TradeCardData): string {
+  if (d.mascot) return d.mascot;
+  const pool = d.pnlPct >= 0 ? MASCOTS_POSITIVE : MASCOTS_NEGATIVE;
+  const key = `${d.symbol}|${d.when || ""}|${Math.round(d.pnlPct * 100)}`;
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return pool[(h >>> 0) % pool.length];
 }
+
+type Tone = { label: string; accent: string; soft: string };
+function toneFor(pct: number): Tone {
+  if (pct >= 100) return { label: "AYA GİDİYORUZ 🚀", accent: "#22d3ee", soft: "#a5f3fc" };
+  if (pct >= 30)  return { label: "COŞTU 🔥",         accent: "#34d399", soft: "#a7f3d0" };
+  if (pct >= 5)   return { label: "CEBE KOYDUK 😎",   accent: "#4ade80", soft: "#bbf7d0" };
+  if (pct >= 0)   return { label: "UFAK AMA ARTI 🙂", accent: "#86efac", soft: "#dcfce7" };
+  if (pct >= -15) return { label: "UFAK TIRPAN 😐",   accent: "#fbbf24", soft: "#fde68a" };
+  if (pct >= -40) return { label: "CANIMIZ YANDI 😵", accent: "#fb7185", soft: "#fecdd3" };
+  return { label: "REKT OLDUK 💀", accent: "#ef4444", soft: "#fecaca" };
+}
+
+const W = 1280, H = 720;
+const imgCache = new Map<string, HTMLImageElement>();
+
+function loadImg(src: string): Promise<HTMLImageElement> {
+  const cached = imgCache.get(src);
+  if (cached && cached.complete && cached.naturalWidth) return Promise.resolve(cached);
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => { imgCache.set(src, img); res(img); };
+    img.onerror = () => rej(new Error("maskot yüklenemedi"));
+    img.src = src;
+  });
+}
+
 function sol(n: number): string {
   return `${n.toLocaleString("en-US", { maximumFractionDigits: 3, minimumFractionDigits: 3 })} SOL`;
 }
@@ -50,127 +83,142 @@ function pctStr(n: number): string {
   return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 }
 
-/** Tek parça SVG dizesi. Hem ekranda gösterim hem PNG export bunu kullanır. */
-export function buildTradeCardSVG(d: TradeCardData): string {
-  const t = tierFor(d.pnlPct);
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+/** Kartı verilen canvas'a çizer (arka plan + metin). */
+export async function renderTradeCard(canvas: HTMLCanvasElement, d: TradeCardData, scale = 1) {
+  canvas.width = W * scale;
+  canvas.height = H * scale;
+  const ctx = canvas.getContext("2d")!;
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  const t = toneFor(d.pnlPct);
   const win = d.pnlPct >= 0;
+
+  // Arka plan (maskot) — yüklenemezse düz koyu zemin
+  try {
+    const img = await loadImg(mascotSrc(pickMascot(d)));
+    ctx.drawImage(img, 0, 0, W, H);
+  } catch {
+    ctx.fillStyle = "#0b1220";
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Sol karartma (metin okunaklılığı) — soldan sağa doğru şeffaflaşır
+  const gx = ctx.createLinearGradient(0, 0, W * 0.72, 0);
+  gx.addColorStop(0, "rgba(5,8,14,0.90)");
+  gx.addColorStop(0.55, "rgba(5,8,14,0.42)");
+  gx.addColorStop(1, "rgba(5,8,14,0)");
+  ctx.fillStyle = gx;
+  ctx.fillRect(0, 0, W, H);
+  // Alt karartma (marka barı)
+  const gy = ctx.createLinearGradient(0, H - 110, 0, H);
+  gy.addColorStop(0, "rgba(5,8,14,0)");
+  gy.addColorStop(1, "rgba(5,8,14,0.82)");
+  ctx.fillStyle = gy;
+  ctx.fillRect(0, H - 110, W, 110);
+
+  const F = "Inter, ui-sans-serif, system-ui, -apple-system, sans-serif";
+  const X = 72;
+  ctx.textBaseline = "alphabetic";
+
+  // Mod rozeti
   const modeTag = d.mode === "ai" ? "AI TRADE" : d.mode === "copy" ? "COPY TRADE" : "SNIPER";
   const kind = d.kind === "live" ? "CANLI" : "PAPER";
-  const dateStr = d.when ? new Date(d.when).toLocaleString("tr-TR") : "";
+  const badge = `${modeTag} · ${kind}`;
+  ctx.font = `800 20px ${F}`;
+  const bw = ctx.measureText(badge).width + 52;
+  ctx.fillStyle = `${t.accent}26`;
+  roundRect(ctx, X, 60, bw, 42, 21); ctx.fill();
+  ctx.fillStyle = t.accent;
+  ctx.beginPath(); ctx.arc(X + 24, 81, 6, 0, Math.PI * 2); ctx.fill();
+  ctx.fillText(badge, X + 40, 88);
 
-  // Arka plan mum çubukları (dekoratif, rastgele değil — sabit desen)
-  const bars = [80, 170, 260, 350, 440, 530, 620].map((x, i) => {
-    const h = [120, 70, 150, 90, 180, 60, 140][i];
-    const y = H - 130 - h;
-    const c = i % 3 === 0 ? "#1f8a5a" : i % 3 === 1 ? "#7f1d3a" : "#334155";
-    return `<rect x="${x}" y="${y}" width="34" height="${h}" rx="6" fill="${c}" opacity="0.16"/>
-            <rect x="${x + 15}" y="${y - 20}" width="4" height="${h + 40}" fill="${c}" opacity="0.16"/>`;
-  }).join("");
+  // Sembol
+  ctx.font = `900 64px ${F}`;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(d.symbol, X, 176);
+  const sw = ctx.measureText(d.symbol).width;
+  ctx.font = `700 34px ${F}`;
+  ctx.fillStyle = "#7c8aa5";
+  ctx.fillText("/SOL", X + sw + 14, 176);
 
-  // Kazanç/kayıp oku (mascot arkası)
-  const arrow = win
-    ? `<path d="M980 470 L1080 300 L1180 470 L1130 470 L1130 560 L1030 560 L1030 470 Z" fill="${t.accent}" opacity="0.14"/>`
-    : `<path d="M980 300 L1080 470 L1180 300 L1130 300 L1130 210 L1030 210 L1030 300 Z" fill="${t.accent}" opacity="0.14"/>`;
+  // Büyük yüzde
+  ctx.font = `900 132px ${F}`;
+  ctx.fillStyle = t.accent;
+  ctx.shadowColor = `${t.accent}66`;
+  ctx.shadowBlur = 40;
+  ctx.fillText(pctStr(d.pnlPct), X - 2, 320);
+  ctx.shadowBlur = 0;
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Inter, ui-sans-serif, system-ui, sans-serif">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0a0f1a"/>
-      <stop offset="1" stop-color="#0f1626"/>
-    </linearGradient>
-    <radialGradient id="glow" cx="50%" cy="45%" r="60%">
-      <stop offset="0" stop-color="${t.glow}" stop-opacity="0.9"/>
-      <stop offset="1" stop-color="${t.glow}" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="pct" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="${t.accent}"/>
-      <stop offset="1" stop-color="${win ? "#a7f3d0" : "#fecaca"}"/>
-    </linearGradient>
-  </defs>
+  // Başlangıç / Güncel
+  ctx.font = `600 24px ${F}`;
+  ctx.fillStyle = "#93a2bd";
+  ctx.fillText("Başlangıç", X, 382);
+  ctx.fillText("Güncel", X, 424);
+  ctx.font = `800 26px ${F}`;
+  ctx.fillStyle = "#e2e8f0";
+  ctx.fillText(sol(d.initialSol), X + 168, 382);
+  ctx.fillStyle = t.accent;
+  ctx.fillText(sol(d.worthSol), X + 168, 424);
 
-  <rect width="${W}" height="${H}" fill="url(#bg)"/>
-  <g>${bars}</g>
-  <rect width="${W}" height="${H}" fill="none"/>
-  <circle cx="960" cy="300" r="300" fill="url(#glow)"/>
-  ${arrow}
+  // Sonuç etiketi
+  ctx.font = `900 30px ${F}`;
+  const lw = ctx.measureText(t.label).width + 44;
+  ctx.fillStyle = `${t.accent}26`;
+  roundRect(ctx, X, 452, lw, 54, 14); ctx.fill();
+  ctx.fillStyle = t.soft;
+  ctx.fillText(t.label, X + 22, 489);
 
-  <!-- Sol sütun -->
-  <g transform="translate(64,74)">
-    <rect x="0" y="0" width="${modeTag.length * 15 + 118}" height="40" rx="20" fill="${t.accent}" opacity="0.14"/>
-    <circle cx="24" cy="20" r="7" fill="${t.accent}"/>
-    <text x="42" y="27" fill="${t.accent}" font-size="19" font-weight="800" letter-spacing="1.5">${esc(modeTag)} · ${kind}</text>
-
-    <text x="0" y="108" fill="#ffffff" font-size="66" font-weight="900" letter-spacing="-1">${esc(d.symbol)}</text>
-    <text x="${Math.min(560, d.symbol.length * 40 + 14)}" y="108" fill="#64748b" font-size="40" font-weight="700">/SOL</text>
-
-    <text x="0" y="270" fill="url(#pct)" font-size="150" font-weight="900" letter-spacing="-4">${pctStr(d.pnlPct)}</text>
-
-    <text x="2" y="352" fill="#7c8aa5" font-size="24" font-weight="600">Başlangıç</text>
-    <text x="230" y="352" fill="#cbd5e1" font-size="26" font-weight="800">${sol(d.initialSol)}</text>
-    <text x="2" y="398" fill="#7c8aa5" font-size="24" font-weight="600">Güncel</text>
-    <text x="230" y="398" fill="${t.accent}" font-size="26" font-weight="800">${sol(d.worthSol)}</text>
-
-    <rect x="0" y="430" width="${t.label.length * 20 + 70}" height="52" rx="14" fill="${t.accent}" opacity="0.16"/>
-    <text x="24" y="465" font-size="30" font-weight="900" fill="${t.accent}">${t.emoji} ${esc(t.label)}</text>
-  </g>
-
-  <!-- Mascot -->
-  <circle cx="960" cy="300" r="180" fill="#0b1220" stroke="${t.accent}" stroke-width="4" opacity="0.95"/>
-  <circle cx="960" cy="300" r="180" fill="none" stroke="${t.accent}" stroke-width="10" opacity="0.25"/>
-  <text x="960" y="360" text-anchor="middle" font-size="200">${t.emoji}</text>
-
-  <!-- Alt bar -->
-  <rect x="0" y="${H - 72}" width="${W}" height="72" fill="#0b1220" opacity="0.85"/>
-  <text x="64" y="${H - 28}" fill="#e2e8f0" font-size="26" font-weight="900" letter-spacing="0.5">ALTAY · AI Trade Panel</text>
-  <text x="${W - 64}" y="${H - 28}" text-anchor="end" fill="#64748b" font-size="20" font-weight="600">${esc(dateStr)}</text>
-</svg>`;
-}
-
-/** SVG'yi PNG'ye çevirip indirir (canvas; bağımlılıksız). */
-export async function downloadTradeCardPng(d: TradeCardData, filename = "islem-karti.png") {
-  const svg = buildTradeCardSVG(d);
-  const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  try {
-    const img = new Image();
-    img.decoding = "async";
-    await new Promise<void>((res, rej) => {
-      img.onload = () => res();
-      img.onerror = () => rej(new Error("SVG yüklenemedi"));
-      img.src = url;
-    });
-    const scale = 2; // retina
-    const canvas = document.createElement("canvas");
-    canvas.width = W * scale; canvas.height = H * scale;
-    const ctx = canvas.getContext("2d")!;
-    ctx.scale(scale, scale);
-    ctx.drawImage(img, 0, 0, W, H);
-    await new Promise<void>((res) => canvas.toBlob((b) => {
-      if (b) {
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(b);
-        a.download = filename;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-      }
-      res();
-    }, "image/png"));
-  } finally {
-    URL.revokeObjectURL(url);
+  // Marka + tarih
+  ctx.font = `900 26px ${F}`;
+  ctx.fillStyle = "#e6edf7";
+  ctx.fillText("ALTAY · AI Trade Panel", X, H - 32);
+  if (d.when) {
+    ctx.font = `600 20px ${F}`;
+    ctx.fillStyle = "#8592ab";
+    ctx.textAlign = "right";
+    ctx.fillText(new Date(d.when).toLocaleString("tr-TR"), W - 64, H - 32);
+    ctx.textAlign = "left";
   }
+  void win;
 }
 
-/** Ekranda kartı gösteren React sarmalayıcı. */
+/** Kartı PNG olarak indirir (2x). */
+export async function downloadTradeCardPng(d: TradeCardData, filename = "islem-karti.png") {
+  const canvas = document.createElement("canvas");
+  await renderTradeCard(canvas, d, 2);
+  await new Promise<void>((res) => canvas.toBlob((b) => {
+    if (b) {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(b);
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    }
+    res();
+  }, "image/png"));
+}
+
+/** Ekranda kartı gösteren React sarmalayıcı (canvas). */
 export function TradeShareCard({ data, className }: { data: TradeCardData; className?: string }) {
-  const svg = useMemo(() => buildTradeCardSVG(data), [data]);
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const c = ref.current;
+    if (c) { renderTradeCard(c, data, 1).catch(() => {}); }
+  }, [data]);
   return (
-    <div
+    <canvas
       ref={ref}
       className={className}
-      style={{ width: "100%", aspectRatio: `${W} / ${H}`, borderRadius: 16, overflow: "hidden" }}
-      // buildTradeCardSVG çıktısı kontrollüdür (kullanıcı metni esc'lenir).
-      dangerouslySetInnerHTML={{ __html: svg }}
+      style={{ width: "100%", height: "auto", display: "block", borderRadius: 16, aspectRatio: `${W} / ${H}` }}
     />
   );
 }

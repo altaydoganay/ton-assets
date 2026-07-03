@@ -330,6 +330,32 @@ body {
 }
 @media (prefers-reduced-motion: reduce) { .shake-x { animation: none; } }
 
+/* Otomatik kâr/zarar paylaşım kartı (kapanan işlemde köşede belirir) */
+.auto-trade-card {
+  position: fixed; right: 18px; bottom: 18px; z-index: 70;
+  width: min(420px, calc(100vw - 36px));
+  border: 1px solid var(--border); border-radius: 18px; overflow: hidden;
+  background: var(--card); box-shadow: 0 26px 60px -22px rgba(0,0,0,.7);
+  animation: cardSlideIn .4s cubic-bezier(.2,.8,.2,1);
+}
+.auto-trade-card canvas { display: block; width: 100%; height: auto; }
+.auto-trade-card__close {
+  position: absolute; top: 8px; right: 8px; z-index: 2;
+  display: grid; place-items: center; width: 30px; height: 30px; border-radius: 999px;
+  background: rgba(5,8,14,.6); color: #e6edf7; border: 1px solid rgba(255,255,255,.14);
+  cursor: pointer; backdrop-filter: blur(6px);
+}
+.auto-trade-card__close:hover { background: rgba(5,8,14,.85); }
+.auto-trade-card__dl {
+  display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%;
+  padding: 9px 0; font-size: 13px; font-weight: 700; cursor: pointer;
+  color: var(--ink); background: var(--bg2); border: 0; border-top: 1px solid var(--border);
+}
+.auto-trade-card__dl:hover { background: color-mix(in srgb, var(--brand) 12%, var(--bg2)); }
+.auto-trade-card :focus-visible, .auto-trade-card__close:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+@keyframes cardSlideIn { from { opacity: 0; transform: translateY(16px) scale(.98); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .auto-trade-card { animation: none; } }
+
 /* ============================================================
    BUILD 63 — AI authoritative decision gates
    ============================================================ */

@@ -1,8 +1,10 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
-import { fetcher } from "@/lib/api";
+import { Download, X } from "lucide-react";
+import { fetcher, apiGet } from "@/lib/api";
 import { useToast } from "./Toast";
+import { TradeShareCard, cardFromSellRow, downloadTradeCardPng, type TradeCardData } from "./TradeShareCard";
 
 // ---- hafif konfeti (canvas, bağımlılıksız, kendini temizler) ----
 function burstConfetti(power = 1) {
@@ -77,10 +79,36 @@ export function Celebrations() {
   const toast = useToast();
   const { data: perf } = useSWR<any>("/stats/performance", fetcher, { refreshInterval: 10000 });
   const { data: sum } = useSWR<any>("/stats/trading-summary", fetcher, { refreshInterval: 10000 });
+  const { data: risk } = useSWR<any>("/settings/risk", fetcher, { refreshInterval: 30000 });
 
   const prevClosed = useRef<number | null>(null);
   const prevPnl = useRef<number | null>(null);
   const prevOpen = useRef<number | null>(null);
+  const cardTimer = useRef<any>(null);
+  const [card, setCard] = useState<TradeCardData | null>(null);
+
+  // Kapanan işlemin kartını otomatik köşede gösterir (birkaç saniye sonra kaybolur).
+  async function popLatestCard() {
+    try {
+      const mode = risk?.value?.strategy_mode as ("ai" | "copy" | undefined);
+      const [paper, live] = await Promise.all([
+        apiGet<any[]>("/trading/paper").catch(() => []),
+        apiGet<any[]>("/trading/live").catch(() => []),
+      ]);
+      const sells = [
+        ...(paper || []).map((r) => ({ ...r, _kind: "paper" as const })),
+        ...(live || []).map((r) => ({ ...r, _kind: "live" as const })),
+      ].filter((r) => r.side === "sell" && r.realized_pnl_sol != null);
+      sells.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      const row = sells[0];
+      if (!row) return;
+      const data = cardFromSellRow(row, { mode, kind: row._kind });
+      if (!data) return;
+      setCard(data);
+      clearTimeout(cardTimer.current);
+      cardTimer.current = setTimeout(() => setCard(null), 10000);
+    } catch { /* sessizce geç */ }
+  }
 
   useEffect(() => {
     if (!perf) return;
@@ -96,6 +124,7 @@ export function Celebrations() {
         flashShake("loss");
         toast("error", `İşlem zararla kapandı: ${delta.toFixed(4)} SOL`);
       }
+      popLatestCard();   // kâr da zarar da olsa kartı otomatik göster
     }
     prevClosed.current = closed;
     prevPnl.current = pnl;
@@ -111,5 +140,17 @@ export function Celebrations() {
     prevOpen.current = open;
   }, [sum, toast]);
 
-  return null;
+  useEffect(() => () => clearTimeout(cardTimer.current), []);
+
+  if (!card) return null;
+  return (
+    <div className="auto-trade-card" role="status" aria-live="polite">
+      <button className="auto-trade-card__close" aria-label="Kapat" onClick={() => setCard(null)}><X size={16} /></button>
+      <TradeShareCard data={card} />
+      <button className="auto-trade-card__dl"
+              onClick={() => downloadTradeCardPng(card, `${card.symbol}-${card.pnlPct >= 0 ? "kar" : "zarar"}.png`)}>
+        <Download size={14} /> PNG indir
+      </button>
+    </div>
+  );
 }
