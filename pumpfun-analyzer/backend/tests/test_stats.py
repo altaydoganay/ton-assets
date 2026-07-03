@@ -74,6 +74,26 @@ def test_manual_close_position(db):
     assert "OPEN_MINT" not in [p["token_mint"] for p in stats_service.open_positions(db)]
 
 
+def test_close_tiny_position_fully_closes(db):
+    """Regresyon: miktarı 0.00'a yuvarlanan küçük pozisyon %100 satışta kapanmalı.
+
+    Bug: kapatma/satış matematiği round(qty, 2) kullanıyordu; 0.0004 adetlik bir
+    pozisyon 0.00 adete yuvarlanıp 0 adetlik satış kaydı yazıyor, FIFO netlemede
+    pozisyon hiç azalmıyordu ("satıldı diyor ama hâlâ orada"). Fix: ham miktar
+    (qty_raw) ile kapat.
+    """
+    seed_defaults(db); _clean(db)
+    db.add(PaperTrade(wallet_address="W_tiny", token_mint="TINY_MINT", side="buy",
+                      sol_amount=0.01, token_amount=0.0004, price_sol=25.0))
+    db.commit()
+    # Pozisyon başta açık görünmeli (ham miktar > 0)
+    assert "TINY_MINT" in [p["token_mint"] for p in stats_service.open_positions(db)]
+    r = client.post("/api/stats/positions/TINY_MINT/close?price_sol=30.0")
+    assert r.status_code == 200
+    # Kapatma sonrası pozisyon TAMAMEN kapanmalı
+    assert "TINY_MINT" not in [p["token_mint"] for p in stats_service.open_positions(db)]
+
+
 def test_export_wallets_csv(db):
     seed_defaults(db); _clean(db); _seed(db)
     r = client.get("/api/export/wallets.csv")

@@ -244,7 +244,10 @@ def close_position(mint: str, price_sol: float = Query(...), db: Session = Depen
     p = positions.get(mint)
     if not p:
         raise HTTPException(404, "Açık paper pozisyonu yok")
-    qty = p["qty"]
+    # `qty` görüntü için round(…, 2) edilmiş; küçük pozisyonlarda 0.00'a yuvarlanır.
+    # Satış matematiği DAİMA ham miktarla (qty_raw) yapılmalı, aksi halde 0 adetlik
+    # bir satış kaydı yazılır ve pozisyon FIFO netlemede hiç azalmaz (kapanmaz).
+    qty = float(p.get("qty_raw") or p["qty"])
     proceeds = qty * price_sol
     pnl = proceeds - p["cost_sol"]
     row = PaperTrade(
@@ -277,7 +280,10 @@ def sell_position(mint: str, fraction: float = Query(1.0, gt=0.0, le=1.0),
     price = p.get("current_price_sol")
     if not price:
         raise HTTPException(400, "Canlı fiyat alınamadı — aşağıdaki manuel fiyatla kapatmayı kullan")
-    qty_sell = p["qty"] * fraction
+    # Ham miktarla sat (round edilmiş `qty` küçük pozisyonlarda 0'a düşerdi ve
+    # satış pozisyonu hiç kapatmazdı — "satıldı diyor ama hâlâ orada" hatası).
+    qty_full = float(p.get("qty_raw") or p["qty"])
+    qty_sell = qty_full * fraction
     proceeds = qty_sell * float(price)
     cost_part = p["cost_sol"] * fraction
     pnl = proceeds - cost_part
