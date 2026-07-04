@@ -575,15 +575,20 @@ class HeliusListener:
                 self.event_queue.task_done()
 
     def _update_curve(self, ntx) -> None:
-        """Akıştan mint başına NET SOL girişini biriktir (migration yakınlığı tahmini)."""
+        """Akıştan mint başına NET SOL girişini biriktir (migration yakınlığı tahmini)
+        ve erken-token 'tape'ini besle (unique buyer / al-sat dengesi vb.)."""
+        from ..services.token_tape import TAPE
+        ts = float(ntx.block_time) if getattr(ntx, "block_time", None) else None
         for (owner, mint), amt in (ntx.token_deltas or {}).items():
             if mint == WSOL_MINT:
                 continue
             sol = float((ntx.sol_deltas or {}).get(owner, 0.0))
             if amt > 0 and sol < 0:      # alım: SOL curve'e girdi
                 self.curve_sol[mint] = self.curve_sol.get(mint, 0.0) - sol
+                TAPE.record(mint, owner, "buy", -sol, ts)
             elif amt < 0 and sol > 0:    # satım: SOL curve'den çıktı
                 self.curve_sol[mint] = self.curve_sol.get(mint, 0.0) - sol
+                TAPE.record(mint, owner, "sell", sol, ts)
             self.curve_sol.move_to_end(mint, last=True)
         while len(self.curve_sol) > 20000:  # bellek koruması (en eskiyi at)
             self.curve_sol.popitem(last=False)
@@ -689,15 +694,25 @@ class HeliusListener:
                     continue
                 curve = round(float(self.curve_sol.get(trade.mint, 0.0)), 3)
                 trade.raw["_curve_sol_est"] = curve  # migration yakınlığı tahmini
+                # erken-davranış sinyalleri (tape) — skorlama/kademeli giriş için
+                from ..services.token_tape import TAPE
+                tape_sig = TAPE.signals(trade.mint)
+                if tape_sig is not None:
+                    trade.raw["_tape"] = tape_sig
                 try:
                     res = handle_trade_event(db, trade, chain=self.chain,
                                              notifier=self.notifier, signer=self.signer)
                     self.stat_ai_signals += 1
-                    # curve tahminini token'a işle (panel + skorlama okuyabilsin)
-                    if curve > 0:
+                    # curve + tape tahminini token'a işle (panel + skorlama okuyabilsin)
+                    if curve > 0 or tape_sig is not None:
                         tok = db.query(Token).filter(Token.mint == trade.mint).first()
                         if tok is not None:
-                            tok.metrics = {**(tok.metrics or {}), "curve_sol_est": curve}
+                            extra = {}
+                            if curve > 0:
+                                extra["curve_sol_est"] = curve
+                            if tape_sig is not None:
+                                extra["tape"] = tape_sig
+                            tok.metrics = {**(tok.metrics or {}), **extra}
                             db.commit()
                     if res.get("action") == "buy" and res.get("traded"):
                         logger.info("[AI-WS] alım açıldı %s (curve≈%.1f SOL)", trade.mint[:8], curve)

@@ -571,6 +571,28 @@ def handle_trade_event(
                 return {"action": "skipped", "reason": reason, "strategy": "ai",
                         "wallet": "AI", "token": short_addr(trade.mint), "side": trade.side,
                         "token_score": assessment.total}
+        # ERKEN-DAVRANIŞ (tape) HARD-REJECT: yeterli örnek varsa yapay/riskli
+        # girişleri ele. Tek cüzdan pump veya hiç satış olmaması (honeypot şüphesi).
+        if bool(risk_cfg.get("ai_tape_gate_enabled", True)):
+            tape = tok_m.get("tape") or {}
+            n = int(tape.get("trades", 0) or 0)
+            if n >= int(risk_cfg.get("ai_tape_min_sample", 8) or 8):
+                top = float(tape.get("top_buyer_share", 0.0) or 0.0)
+                max_top = float(risk_cfg.get("ai_tape_max_top_buyer_share", 0.7) or 0.7)
+                tape_reason = None
+                if max_top > 0 and top >= max_top:
+                    tape_reason = f"AI blok: tek cüzdan pump (top alıcı %{top*100:.0f} ≥ %{max_top*100:.0f})"
+                elif (bool(risk_cfg.get("ai_tape_block_no_sells", True))
+                      and int(tape.get("sells", 0) or 0) == 0 and int(tape.get("buys", 0) or 0) >= 6):
+                    tape_reason = "AI blok: hiç satış yok (honeypot şüphesi)"
+                if tape_reason:
+                    _audit(db, "warning", f"AI alım engellendi — {short_addr(trade.mint)}: {tape_reason}",
+                           {"wallet": "AI_TRADE", "token": trade.mint, "signature": trade.signature,
+                            "reason": tape_reason, "token_score": assessment.total,
+                            "tape": tape, "strategy": "ai"})
+                    return {"action": "skipped", "reason": tape_reason, "strategy": "ai",
+                            "wallet": "AI", "token": short_addr(trade.mint), "side": trade.side,
+                            "token_score": assessment.total}
 
     # AKILLI PARA MUTABAKATI (confluence): bu token'i son pencerede kaç FARKLI takip
     # cüzdanı aldı? 2+ bağımsız kaliteli cüzdan = çok daha güçlü sinyal. İsteğe bağlı

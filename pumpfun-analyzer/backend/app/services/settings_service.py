@@ -125,6 +125,13 @@ DEFAULTS: dict[str, dict] = {
         "ai_migration_block_entry": True,  # migration bölgesinde yeni AI alımı açma
         "ai_migration_derisk": True,       # migration bölgesinde kârdaki pozisyonun ana parasını erken çıkar
         "ai_migration_derisk_min_mult": 1.2,  # bu çarpanın altında zorla satma (zararına de-risk yapma)
+        # ERKEN-DAVRANIŞ (tape) HARD-REJECT — mint başına ilk dakikaların al/sat
+        # akışından türetilen sinyallerle yapay/riskli girişleri eler. Yeterli örnek
+        # görülmeden (min_sample) engelleme yapılmaz (taze tokene kör ceza yok).
+        "ai_tape_gate_enabled": True,
+        "ai_tape_min_sample": 8,               # bu kadar trade görülmeden tape ile engelleme yok
+        "ai_tape_max_top_buyer_share": 0.7,    # tek cüzdan alım hacminin %70+'ı → yapay pump
+        "ai_tape_block_no_sells": True,        # yeterli alım var ama HİÇ satış yok → honeypot şüphesi
         # --- AKILLI PARA MUTABAKATI (confluence) ---
         "min_confluence": 1,             # 1 = kapalı; 2 = sadece 2+ takip cüzdanı aynı token'i alınca aç
         "live_min_confluence": 1,        # canlıda hızlı giriş için confluence kapalı
@@ -650,6 +657,8 @@ def seed_defaults(db: Session) -> None:
             "ai_migration_guard_enabled": True, "ai_migration_curve_sol": 75.0,
             "ai_migration_block_entry": True, "ai_migration_derisk": True,
             "ai_migration_derisk_min_mult": 1.2,
+            "ai_tape_gate_enabled": True, "ai_tape_min_sample": 8,
+            "ai_tape_max_top_buyer_share": 0.7, "ai_tape_block_no_sells": True,
         }.items():
             risk.setdefault(k, v)
         set_setting(db, "risk", risk)
