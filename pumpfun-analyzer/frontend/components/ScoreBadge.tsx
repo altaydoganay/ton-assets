@@ -4,11 +4,18 @@ import clsx from "clsx";
 export function ScoreBadge({ score }: { score?: number | null }) {
   if (score === null || score === undefined)
     return <span className="badge muted">—</span>;
-  const cls =
-    score >= 70 ? "bg-emerald-500/15 text-emerald-500"
-    : score >= 50 ? "bg-amber-500/15 text-amber-500"
-    : "bg-red-500/15 text-red-500";
-  return <span className={clsx("badge", cls)}>{score.toFixed(0)}/100</span>;
+  // TradeFable skor stili: mini ilerleme barı + mono skor (token/cüzdan tablosu)
+  const tone = score >= 70 ? "var(--emerald)" : score >= 50 ? "var(--amber)" : "var(--rose)";
+  return (
+    <span className="inline-flex items-center gap-2 align-middle">
+      <span className="inline-block h-[5px] w-10 overflow-hidden rounded-full"
+        style={{ background: "color-mix(in srgb, var(--muted) 22%, transparent)" }}>
+        <span className="block h-full rounded-full"
+          style={{ width: `${Math.max(0, Math.min(100, score))}%`, background: tone }} />
+      </span>
+      <span className="font-mono text-xs font-bold tabular-nums" style={{ color: tone }}>{score.toFixed(0)}</span>
+    </span>
+  );
 }
 
 export function StatusBadge({ status }: { status: string }) {
