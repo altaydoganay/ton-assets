@@ -283,6 +283,19 @@ export function TinyLine({ data, dataKey = "pnl" }: { data?: ChartPoint[]; dataK
   );
 }
 
+// Eğrinin ucunda "canlı" nokta + ping (tasarımdaki equity uç işareti).
+function EquityEndDot(props: any) {
+  const { cx, cy, index, points } = props;
+  const last = Array.isArray(points) ? points.length - 1 : -1;
+  if (index !== last || cx == null || cy == null) return null;
+  return (
+    <g>
+      <circle cx={cx} cy={cy} r={4} fill="none" stroke="currentColor" strokeWidth={1.4} className="equity-ping" />
+      <circle cx={cx} cy={cy} r={4} fill="currentColor" stroke="var(--card)" strokeWidth={2} />
+    </g>
+  );
+}
+
 export function PremiumLineChart({ data, dataKey = "pnl", label = "Equity" }: { data?: ChartPoint[]; dataKey?: string; label?: string }) {
   const rows = (data || []).slice(-80);
   return (
@@ -303,7 +316,7 @@ export function PremiumLineChart({ data, dataKey = "pnl", label = "Equity" }: { 
             <XAxis dataKey="t" hide />
             <YAxis tick={{ fontSize: 11 }} width={48} />
             <Tooltip contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14 }} />
-            <Area type="monotone" dataKey={dataKey} stroke="currentColor" fill="url(#areaMain)" strokeWidth={2.6} dot={false} />
+            <Area type="monotone" dataKey={dataKey} stroke="currentColor" fill="url(#areaMain)" strokeWidth={2.6} dot={<EquityEndDot />} />
           </AreaChart>
         </ResponsiveContainer>
       ) : <div className="chart-empty h-[220px]">Equity verisi oluşmadı</div>}

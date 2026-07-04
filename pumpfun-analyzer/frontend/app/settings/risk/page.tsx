@@ -117,6 +117,30 @@ const PROFILES = [
 
 function FieldInput({ f, form, set }: { f: Field; form: Risk; set: (k: string, v: any) => void }) {
   const val = form[f.key];
+  // İşlem modu: tasarımdaki "altın-kapılı" segment (Paper nötr · Live altın)
+  if (f.key === "mode") {
+    return (
+      <div className="setting-field">
+        <label className="flex items-center gap-1 text-sm font-semibold">
+          {f.label}<InfoTip title={f.label}>{f.hint}</InfoTip>
+        </label>
+        <div className="mt-1 text-xs muted leading-relaxed">{f.hint}</div>
+        <div className="mode-seg mt-2">
+          {(f.options || []).map((o) => {
+            const active = (val ?? "") === o.value;
+            const gold = o.value === "live";
+            return (
+              <button key={o.value} type="button"
+                className={`mode-seg-btn${active ? " active" : ""}${gold ? " gold" : ""}`}
+                onClick={() => set(f.key, o.value)}>
+                {gold ? "◆ " : ""}{o.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="setting-field">
       <label className="flex items-center gap-1 text-sm font-semibold">

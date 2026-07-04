@@ -365,6 +365,18 @@ h1, h2, h3, h4, h5, .font-display {
 @keyframes cardSlideIn { from { opacity: 0; transform: translateY(16px) scale(.98); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .auto-trade-card { animation: none; } }
 
+/* İşlem modu segmenti (Paper nötr · Live altın-kapılı) */
+.mode-seg { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb, var(--bg2) 60%, transparent); }
+.mode-seg-btn { border: 0; border-radius: 10px; padding: .5rem 1rem; font-size: .82rem; font-weight: 700; cursor: pointer; color: var(--muted); background: transparent; transition: all .2s ease; }
+.mode-seg-btn:hover { color: var(--text); }
+.mode-seg-btn.active { background: color-mix(in srgb, var(--card) 92%, transparent); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
+.mode-seg-btn.gold.active { background: color-mix(in srgb, var(--gold, #fbbf24) 16%, transparent); color: var(--gold, #fbbf24); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold, #fbbf24) 55%, transparent); }
+
+/* Equity eğrisi uç-nokta ping (tasarım) */
+.equity-ping { transform-box: fill-box; transform-origin: center; animation: equityPing 2.6s ease-out infinite; }
+@keyframes equityPing { 0% { transform: scale(1); opacity: .55; } 70%, 100% { transform: scale(2.6); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .equity-ping { animation: none; } }
+
 /* ============================================================
    BUILD 63 — AI authoritative decision gates
    ============================================================ */
