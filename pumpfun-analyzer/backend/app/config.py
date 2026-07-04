@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     app_name: str = "Pump.fun Cüzdan Analizcisi"
     # SÜRÜM/BUILD numarası — her anlamlı güncellemede artar. Panelin üst barında
     # ve /health'te gösterilir; deploy'un doğru kodu aldığını buradan doğrularsın.
-    app_build: str = "99"
-    app_build_label: str = "Marka güncellemesi: TradeFable adı + logosu (site geneli, favicon ve paylaşım kartı); eski isim kaldırıldı"
+    app_build: str = "100"
+    app_build_label: str = "TradeFable tasarım sistemi (faz 1): marka fontları (Space Grotesk/Manrope/JetBrains Mono), cam paneller, ağ arka planı"
     environment: Literal["development", "production", "test"] = "development"
     api_prefix: str = "/api"
     secret_key: str = Field(default="degistir-bu-anahtari", description="Uygulama imza anahtarı")

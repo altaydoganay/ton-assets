@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import useSWR from "swr";
@@ -43,12 +43,70 @@ const MODE_LINKS: Record<Mode, { href: string; label: string; hint: string; icon
   ],
 };
 
+// TradeFable imza arka planı: sürüklenen orb'lar + ince ağ (node/edge) + paket
+// akışı. Ağ, canvas ile bağımsız çizilir; reduced-motion'da tek kare kalır.
+function NetworkCanvas() {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const cv = ref.current;
+    if (!cv) return;
+    const ctx = cv.getContext("2d");
+    if (!ctx) return;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let w = 0, h = 0;
+    const sync = () => {
+      w = cv.clientWidth || window.innerWidth; h = cv.clientHeight || window.innerHeight;
+      cv.width = w * dpr; cv.height = h * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    sync();
+    const N = Math.max(30, Math.round((w * h) / 26000));
+    const nodes = Array.from({ length: N }, () => ({
+      x: Math.random() * w, y: Math.random() * h,
+      vx: (Math.random() - 0.5) * 0.14, vy: (Math.random() - 0.5) * 0.14,
+      r: Math.random() * 1.4 + 0.6,
+    }));
+    const packets: { a: any; b: any; t: number; sp: number }[] = [];
+    const spawn = () => {
+      const a = nodes[(Math.random() * nodes.length) | 0];
+      let b: any = null, bd = 1e9;
+      for (const n of nodes) { if (n === a) continue; const d = (n.x - a.x) ** 2 + (n.y - a.y) ** 2; if (d < bd && d < 24000) { bd = d; b = n; } }
+      if (b) packets.push({ a, b, t: 0, sp: 0.006 + Math.random() * 0.01 });
+    };
+    let raf = 0;
+    const draw = () => {
+      ctx.clearRect(0, 0, w, h);
+      for (const n of nodes) { n.x += n.vx; n.y += n.vy; if (n.x < 0 || n.x > w) n.vx *= -1; if (n.y < 0 || n.y > h) n.vy *= -1; }
+      for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j], dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
+        if (d2 < 15500) { ctx.strokeStyle = `rgba(45,212,191,${((1 - d2 / 15500) * 0.2).toFixed(3)})`; ctx.lineWidth = 0.7; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+      }
+      for (const n of nodes) { ctx.fillStyle = "rgba(120,220,190,.5)"; ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, 6.2832); ctx.fill(); }
+      for (let i = packets.length - 1; i >= 0; i--) {
+        const p = packets[i]; p.t += p.sp; if (p.t >= 1) { packets.splice(i, 1); continue; }
+        const x = p.a.x + (p.b.x - p.a.x) * p.t, y = p.a.y + (p.b.y - p.a.y) * p.t;
+        ctx.fillStyle = `rgba(52,211,153,${(1 - Math.abs(0.5 - p.t) * 2).toFixed(2)})`;
+        ctx.beginPath(); ctx.arc(x, y, 1.7, 0, 6.2832); ctx.fill();
+      }
+      if (packets.length < 10 && Math.random() < 0.06) spawn();
+      raf = requestAnimationFrame(draw);
+    };
+    if (reduce) { draw(); cancelAnimationFrame(raf); return; }
+    draw();
+    const onResize = () => sync();
+    window.addEventListener("resize", onResize);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", onResize); };
+  }, []);
+  return <canvas ref={ref} className="premium-net" aria-hidden />;
+}
+
 export function PremiumBackdrop() {
   return (
     <div className="premium-backdrop" aria-hidden>
       <div className="orb orb-a" />
       <div className="orb orb-b" />
       <div className="orb orb-c" />
+      <NetworkCanvas />
       <div className="noise" />
     </div>
   );
