@@ -5,14 +5,29 @@ import useSWR from "swr";
 import {
   ArrowRight, BrainCircuit, CheckCircle2, Clock, FilterX, FlaskConical,
   Gauge, LineChart, ShieldCheck, Sparkles, TimerReset, TrendingDown,
-  TrendingUp, Wallet, XCircle, Zap, RotateCcw, Trash2,
+  TrendingUp, Wallet, XCircle, Zap, RotateCcw, Trash2, Download,
 } from "lucide-react";
 import { PageHeader } from "@/components/Confidence";
 import { Callout, InfoTip, StatCard } from "@/components/ui";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { useToast } from "@/components/Toast";
 import { DecisionDrawer, PremiumBarChart, PremiumDonut, PremiumEmpty } from "@/components/PremiumUI";
+import { TradeShareCard, downloadTradeCardPng, type TradeCardData } from "@/components/TradeShareCard";
 import { apiSend, fetcher, fmtNum, shortAddr } from "@/lib/api";
+
+// Kapanmış bir AI session'ını paylaşım kartı verisine çevirir (moonbag: kısmi
+// satışlarda proceeds toplanır; oran ana paraya göredir).
+function sessionToCard(t: any): TradeCardData | null {
+  if (!t || t.status === "open" || t.pnl_sol == null) return null;
+  const initial = Number(t.cost_sol || 0);
+  const worth = Number(t.proceeds_sol ?? (initial + Number(t.pnl_sol || 0)));
+  const pct = initial > 1e-9 ? ((worth - initial) / initial) * 100 : (Number(t.pnl_sol || 0) >= 0 ? 0 : -100);
+  return {
+    symbol: t.token?.symbol || String(t.token_mint || "").slice(0, 4).toUpperCase() || "TOKEN",
+    pnlPct: pct, initialSol: initial, worthSol: worth,
+    mode: "ai", kind: "paper", when: t.exit_time || t.entry_time,
+  };
+}
 
 type WindowMinutes = 15 | 60 | 240 | 1440;
 
@@ -45,6 +60,17 @@ function recommendationTone(level?: string) {
   return "var(--sky)";
 }
 
+// Çıkış sebebini anlama göre renklendir: kâr=yeşil, stop/rug=kırmızı,
+// trailing=mavi, zaman/momentum=amber. Hem anahtar hem Türkçe etiketle eşleşir.
+function exitTone(reason?: string): string {
+  const s = (reason || "").toLowerCase();
+  if (/(liq|rug|likidite|hard|sert stop|\bsl\b|stop-loss|dump)/.test(s)) return "var(--rose)";
+  if (/(principal|ana para|10x|25x|\btp\b|take-profit|kâr|kar|kademeli|partial)/.test(s)) return "var(--emerald)";
+  if (/(trail|takip eden|moonbag)/.test(s)) return "var(--sky)";
+  if (/(time|zaman|momentum|stagnant|durgun|2x)/.test(s)) return "var(--amber)";
+  return "var(--violet)";
+}
+
 export default function AiTradePage() {
   const [minutes, setMinutes] = useState<WindowMinutes>(60);
   const toast = useToast();
@@ -62,7 +88,12 @@ export default function AiTradePage() {
   const activeAi = String(r.strategy_mode || "copy") === "ai";
   const paperMode = String(r.mode || "paper") === "paper";
   const [selected, setSelected] = useState<any>(null);
+  const [showAllCards, setShowAllCards] = useState(false);
   const exitDonut = exits.map((x: any) => ({ name: x.reason, value: x.count }));
+  // Tamamlanan işlemler → paylaşım kartları (en yeni önce)
+  const tradeCards = (sessions as any[])
+    .map(sessionToCard)
+    .filter(Boolean) as TradeCardData[];
 
   async function resetAi(clearPaper: boolean) {
     const ok = await confirm({
@@ -184,6 +215,43 @@ export default function AiTradePage() {
         </section>
       )}
 
+      {tradeCards.length > 0 && (
+        <section className="card">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 font-bold"><Sparkles size={18} className="brand" /> Tamamlanan İşlem Kartları
+              <InfoTip title="İşlem kartları">Kapanan her AI işlemi otomatik olarak paylaşılabilir bir banner'a dönüşür. En son işlemin kartı üstte; "Tümünü gör" ile sırayla hepsi açılır. Her kart PNG indirilebilir.</InfoTip>
+            </h2>
+            <button className="btn" onClick={() => setShowAllCards((v) => !v)}>
+              {showAllCards ? "Gizle" : `Tümünü gör (${tradeCards.length})`}
+            </button>
+          </div>
+          {!showAllCards ? (
+            <div className="grid gap-3 lg:grid-cols-[1.4fr_1fr] lg:items-center">
+              <TradeShareCard data={tradeCards[0]} />
+              <div className="flex flex-col gap-2">
+                <div className="text-sm muted">En son kapanan AI işlemi. Otomatik oluşturuldu.</div>
+                <button className="btn-primary w-fit"
+                  onClick={() => downloadTradeCardPng(tradeCards[0], `${tradeCards[0].symbol}-${tradeCards[0].pnlPct >= 0 ? "kar" : "zarar"}.png`)}>
+                  <Download size={15} /> PNG indir
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {tradeCards.map((c, i) => (
+                <div key={`${c.symbol}-${c.when || i}`} className="flex flex-col gap-2">
+                  <TradeShareCard data={c} />
+                  <button className="btn-ghost w-fit"
+                    onClick={() => downloadTradeCardPng(c, `${c.symbol}-${c.pnlPct >= 0 ? "kar" : "zarar"}.png`)}>
+                    <Download size={13} /> PNG
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       <div className="grid gap-4 xl:grid-cols-[1.15fr_.85fr]">
         <PremiumBarChart data={reasons} label="AI Karar Hunisi — Görsel" />
         <PremiumDonut data={exitDonut} label="Exit Sebepleri — Görsel" />
@@ -290,11 +358,19 @@ export default function AiTradePage() {
             <InfoTip title="Exit Sebebi Takibi">AI lider takip etmediği için çıkış kalitesi TP/SL/trailing/max hold ile ölçülür. Zararların çoğu SL ise giriş zayıf; çoğu zaman çıkışı ise token çok geç seçiliyor olabilir.</InfoTip>
           </div>
           <div className="space-y-2">
-            {exits.map((x: any) => (
-              <div key={x.reason} className="flex items-center justify-between rounded-2xl border px-3 py-3 text-sm" style={{ borderColor: "var(--border)", background: "var(--bg2)" }}>
-                <span className="font-semibold">{x.reason}</span><b>{x.count}</b>
-              </div>
-            ))}
+            {exits.map((x: any) => {
+              const tone = exitTone(x.reason);
+              return (
+                <div key={x.reason} className="flex items-center justify-between rounded-2xl border px-3 py-3 text-sm"
+                  style={{ borderColor: `color-mix(in srgb, ${tone} 40%, var(--border))`, background: `color-mix(in srgb, ${tone} 8%, var(--bg2))` }}>
+                  <span className="flex items-center gap-2 font-semibold">
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: tone }} />
+                    <span style={{ color: tone }}>{x.reason}</span>
+                  </span>
+                  <b className="font-mono tabular-nums" style={{ color: tone }}>{x.count}</b>
+                </div>
+              );
+            })}
             {exits.length === 0 && <div className="rounded-2xl border border-dashed p-8 text-center text-xs muted">Henüz kapanan AI pozisyonu yok.</div>}
           </div>
         </section>
