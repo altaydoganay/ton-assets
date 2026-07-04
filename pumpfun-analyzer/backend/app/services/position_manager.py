@@ -56,6 +56,74 @@ def _curve_sol(db: Session, mint: str) -> float:
         return 0.0
 
 
+def _token_tape(db: Session, mint: str) -> dict | None:
+    """Token'ın erken-davranış sinyalleri (listener tarafından metrics'e flush)."""
+    token = db.query(Token).filter(Token.mint == mint).first()
+    m = (token.metrics or {}) if token else {}
+    t = m.get("tape")
+    return t if isinstance(t, dict) else None
+
+
+def _add_buy(db: Session, wallet: str, mint: str, price: float, add_sol: float,
+             kind: str, held_min: float) -> None:
+    """Kademeli giriş (confirm/scale) için pozisyona ekleme alımı yazar (paper)."""
+    qty_add = add_sol / price if price > 0 else 0.0
+    if qty_add <= 0 or add_sol <= 0:
+        return
+    db.add(PaperTrade(
+        wallet_address=wallet, token_mint=mint, side="buy",
+        sol_amount=add_sol, token_amount=qty_add, price_sol=price, fee_sol=0.0,
+        is_open=True, reason=f"{kind} ekleme (paper)",
+    ))
+    label = "CONFIRM ekleme (piramitle)" if kind == "confirm" else "SCALE ekleme (piramitle)"
+    db.add(AuditLog(level="info", category="trading",
+                    message=f"{label}: {mint[:6]}… +{round(add_sol, 4)} SOL @ {price}",
+                    context={"reason": f"{kind}_add", "exit_reason": f"{kind}_add",
+                             "strategy": "ai", "wallet": wallet, "token": mint,
+                             "add_sol": round(add_sol, 4), "held_min": round(held_min, 1)}))
+
+
+def _maybe_add_entry(db: Session, r: dict, p: dict, st: dict, price: float,
+                     held_min: float, cost: float, qty: float) -> str | None:
+    """Scout sağlıklıysa confirm/scale ekleme yapar. Dönüş: 'confirm'|'scale'|None.
+
+    Sağlık: fiyat girişten yukarı (mult), tape'te yeterli FARKLI alıcı ve tek
+    cüzdan yoğunluğu düşük. Sağlıksızsa eklemez — scout küçük kalır."""
+    if not bool(r.get("ai_confirm_enabled", True)) or price <= 0 or cost <= 0 or qty <= 0:
+        return None
+    if st.get("confirmed") and st.get("scaled"):
+        return None
+    tape = _token_tape(db, p["token_mint"]) or {}
+    ub = int(tape.get("unique_buyers", 0) or 0)
+    top = float(tape.get("top_buyer_share", 0.0) or 0.0)
+    max_top = float(r.get("ai_tape_max_top_buyer_share", 0.7) or 0.7)
+    if max_top > 0 and top >= max_top:
+        return None  # tek cüzdan pump → ekleme yapma
+    min_ub = int(r.get("ai_confirm_min_unique_buyers", 5) or 0)
+    if ub < min_ub:
+        return None  # organik ilgi yok
+    live = str(r.get("mode", "paper")) == "live"
+    base = float(r.get("fixed_sol_amount", 0.05) if live else r.get("paper_trade_sol", 0.01)) or 0.0
+    mult = (qty * price) / cost
+    wallet = p["wallet_address"]
+    mint = p["token_mint"]
+    # CONFIRM
+    if (not st.get("confirmed")
+            and float(r.get("ai_confirm_min_minutes", 0.25) or 0) <= held_min <= float(r.get("ai_confirm_max_minutes", 2.0) or 0)
+            and mult >= float(r.get("ai_confirm_min_mult", 1.1) or 1.1)):
+        _add_buy(db, wallet, mint, price, base * float(r.get("ai_confirm_add_fraction", 0.4) or 0.4), "confirm", held_min)
+        st["confirmed"] = True
+        return "confirm"
+    # SCALE (confirm sonrası, daha güçlü momentum)
+    if (bool(r.get("ai_scale_enabled", True)) and st.get("confirmed") and not st.get("scaled")
+            and held_min <= float(r.get("ai_scale_max_minutes", 3.0) or 0)
+            and mult >= float(r.get("ai_scale_min_mult", 1.4) or 1.4)):
+        _add_buy(db, wallet, mint, price, base * float(r.get("ai_scale_add_fraction", 0.5) or 0.5), "scale", held_min)
+        st["scaled"] = True
+        return "scale"
+    return None
+
+
 def _decide(pnl_pct: float, peak_pnl_pct: float, drop_from_peak: float, held_min: float,
             tp: float, sl: float, trail: float, trail_act: float, max_hold_min: float,
             stagnant_min: float = 0.0, stagnant_max_pnl: float = 0.0) -> str | None:
@@ -156,7 +224,12 @@ def _hunter_step(db: Session, r: dict, p: dict, st: dict, price: float, liq_usd:
             return events, True
 
     if not principal_out:
-        # ---- ACCUM FAZI: ana para henüz çıkmadı → SERT koruma ----
+        # ---- ACCUM FAZI: ana para henüz çıkmadı ----
+        # Önce KADEMELİ GİRİŞ: scout sağlıklıysa confirm/scale ile ekle. Ekleme
+        # yapıldıysa bu tur çıkış kontrolü atlanır (yeni maliyet bazıyla sonraki tur).
+        if _maybe_add_entry(db, r, p, st, price, held_min, cost, qty) is not None:
+            return events, False
+        # → SERT koruma
         stop_pre = float(r.get("ai_stop_pre_pct", 0.35) or 0)
         if stop_pre > 0 and (mult - 1.0) <= -stop_pre:
             events.append(_sell(db, wallet, mint, qty, price, qty, cost, "hard_stop", held_min))

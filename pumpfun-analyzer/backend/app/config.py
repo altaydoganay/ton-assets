@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     app_name: str = "Pump.fun Cüzdan Analizcisi"
     # SÜRÜM/BUILD numarası — her anlamlı güncellemede artar. Panelin üst barında
     # ve /health'te gösterilir; deploy'un doğru kodu aldığını buradan doğrularsın.
-    app_build: str = "103"
-    app_build_label: str = "Erken-token 'tape' altyapısı: WS akışından ilk dakikaların al/sat davranışı (unique buyer, tek-cüzdan yoğunluğu, dev satışı) toplanır; yapay pump / honeypot hard-reject gate. #1/#2 için temel."
+    app_build: str = "104"
+    app_build_label: str = "Kademeli giriş (#1): scout sağlıklıysa (tape: farklı alıcı artıyor, tek cüzdan yoğun değil, fiyat yukarı) confirm→scale ile pozisyona küçük eklemeler; sağlıksızsa scout küçük kalır"
     environment: Literal["development", "production", "test"] = "development"
     api_prefix: str = "/api"
     secret_key: str = Field(default="degistir-bu-anahtari", description="Uygulama imza anahtarı")

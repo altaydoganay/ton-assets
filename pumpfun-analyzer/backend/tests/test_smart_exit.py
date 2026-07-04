@@ -217,6 +217,49 @@ def test_hunter_time_2x_exit(db):
     assert _ai_pos(db) == []
 
 
+def test_hunter_confirm_scale_pyramids_healthy_scout(db):
+    """Scout sağlıklıysa (tape: farklı alıcı çok, tek cüzdan yoğun değil, fiyat
+    yukarı) confirm ve ardından scale ekleme alımları yapılır."""
+    from app.models import Token, TokenStatus
+    _ai_risk(db, ai_confirm_enabled=True, ai_scale_enabled=True,
+             ai_confirm_min_minutes=0.0, ai_confirm_max_minutes=5.0, ai_confirm_min_mult=1.1,
+             ai_confirm_min_unique_buyers=5, ai_confirm_add_fraction=0.4,
+             ai_scale_max_minutes=10.0, ai_scale_min_mult=1.4, ai_scale_add_fraction=0.5,
+             paper_trade_sol=0.01, ai_principal_mult=99, ai_momentum_minutes=0, ai_twox_minutes=0)
+    db.query(Token).filter(Token.mint == AI_MINT).delete()
+    db.add(Token(mint=AI_MINT, status=TokenStatus.tracked.value,
+                 metrics={"tape": {"unique_buyers": 8, "top_buyer_share": 0.2,
+                                   "trades": 25, "buys": 20, "sells": 4}}))
+    db.commit()
+    _ai_open(db, qty=100, cost=0.10, minutes_ago=1)  # giriş 0.001/adet
+    # confirm: fiyat +%20 → ekleme (kapanış değil)
+    assert manage_positions(db, MutableMarket(0.0012)) == []
+    buys = db.query(PaperTrade).filter(PaperTrade.token_mint == AI_MINT, PaperTrade.side == "buy").all()
+    assert any("confirm" in (b.reason or "") for b in buys)
+    # scale: fiyat +%50 → ikinci ekleme
+    manage_positions(db, MutableMarket(0.0015))
+    buys2 = db.query(PaperTrade).filter(PaperTrade.token_mint == AI_MINT, PaperTrade.side == "buy").all()
+    assert any("scale" in (b.reason or "") for b in buys2)
+    db.query(Token).filter(Token.mint == AI_MINT).delete(); db.commit()
+
+
+def test_hunter_no_pyramid_when_single_wallet_pump(db):
+    """Tek cüzdan pump (top_buyer_share yüksek) ise ekleme yapılmaz."""
+    from app.models import Token, TokenStatus
+    _ai_risk(db, ai_confirm_enabled=True, ai_confirm_min_minutes=0.0, ai_confirm_max_minutes=5.0,
+             ai_confirm_min_mult=1.1, ai_confirm_min_unique_buyers=5,
+             ai_principal_mult=99, ai_momentum_minutes=0, ai_twox_minutes=0, ai_stop_pre_pct=0)
+    db.query(Token).filter(Token.mint == AI_MINT).delete()
+    db.add(Token(mint=AI_MINT, status=TokenStatus.tracked.value,
+                 metrics={"tape": {"unique_buyers": 2, "top_buyer_share": 0.85, "trades": 20}}))
+    db.commit()
+    _ai_open(db, qty=100, cost=0.10, minutes_ago=1)
+    manage_positions(db, MutableMarket(0.0012))
+    buys = db.query(PaperTrade).filter(PaperTrade.token_mint == AI_MINT, PaperTrade.side == "buy").all()
+    assert not any("confirm" in (b.reason or "") for b in buys)  # ekleme YOK
+    db.query(Token).filter(Token.mint == AI_MINT).delete(); db.commit()
+
+
 def test_hunter_migration_derisk_takes_principal_early(db):
     """Token migration bölgesindeyse (curve_sol_est yüksek) ve kârdaysa, 2.5x'i
     beklemeden ana para erken çıkarılır (risksize alma)."""

@@ -132,6 +132,20 @@ DEFAULTS: dict[str, dict] = {
         "ai_tape_min_sample": 8,               # bu kadar trade görülmeden tape ile engelleme yok
         "ai_tape_max_top_buyer_share": 0.7,    # tek cüzdan alım hacminin %70+'ı → yapay pump
         "ai_tape_block_no_sells": True,        # yeterli alım var ama HİÇ satış yok → honeypot şüphesi
+        # KADEMELİ GİRİŞ (confirm → scale): scout girişinden sonra token DAVRANIŞI
+        # sağlıklı kalırsa (tape: fiyat yukarı + farklı alıcı artıyor + tek cüzdan
+        # yoğun değil) pozisyona küçük eklemeler yapılır. Sağlıksızsa eklenmez;
+        # scout küçük kalır. Boyutlar paper_trade_sol (canlıda fixed_sol_amount) ×.
+        "ai_confirm_enabled": True,
+        "ai_confirm_min_minutes": 0.25,        # 15 sn: ilk saniyeler oturmadan ekleme yok
+        "ai_confirm_max_minutes": 2.0,         # 120 sn: doğrulama penceresi
+        "ai_confirm_min_mult": 1.1,            # fiyat girişten en az +%10 yukarıda olmalı
+        "ai_confirm_min_unique_buyers": 5,     # organik ilgi (farklı alıcı) şartı
+        "ai_confirm_add_fraction": 0.4,        # confirm ekleme büyüklüğü (base ×)
+        "ai_scale_enabled": True,
+        "ai_scale_max_minutes": 3.0,           # scale penceresi (confirm sonrası)
+        "ai_scale_min_mult": 1.4,              # daha güçlü momentum şartı
+        "ai_scale_add_fraction": 0.5,          # scale ekleme büyüklüğü (base ×)
         # --- AKILLI PARA MUTABAKATI (confluence) ---
         "min_confluence": 1,             # 1 = kapalı; 2 = sadece 2+ takip cüzdanı aynı token'i alınca aç
         "live_min_confluence": 1,        # canlıda hızlı giriş için confluence kapalı
@@ -659,6 +673,11 @@ def seed_defaults(db: Session) -> None:
             "ai_migration_derisk_min_mult": 1.2,
             "ai_tape_gate_enabled": True, "ai_tape_min_sample": 8,
             "ai_tape_max_top_buyer_share": 0.7, "ai_tape_block_no_sells": True,
+            "ai_confirm_enabled": True, "ai_confirm_min_minutes": 0.25,
+            "ai_confirm_max_minutes": 2.0, "ai_confirm_min_mult": 1.1,
+            "ai_confirm_min_unique_buyers": 5, "ai_confirm_add_fraction": 0.4,
+            "ai_scale_enabled": True, "ai_scale_max_minutes": 3.0,
+            "ai_scale_min_mult": 1.4, "ai_scale_add_fraction": 0.5,
         }.items():
             risk.setdefault(k, v)
         set_setting(db, "risk", risk)
