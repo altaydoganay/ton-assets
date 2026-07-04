@@ -734,6 +734,11 @@ def handle_trade_event(
             if is_ai_signal else
             f"Copy uygun: takip cüzdanı, token kapısı {token_gate}, veto {'yok' if not assessment.vetoed else 'var'}"
         )
+        ai_tape = (token.metrics or {}).get("tape") if is_ai_signal else None
+        ai_early_q = None
+        if is_ai_signal:
+            from .token_tape import early_quality_score
+            ai_early_q = early_quality_score(ai_tape)
         _audit(db, "info",
                f"İşlem AÇILDI — {source_label} → {short_addr(trade.mint)} "
                f"({engine.cfg.mode}, {decision.sol_amount:.3f} SOL){conf_txt}",
@@ -742,6 +747,7 @@ def handle_trade_event(
                 "opened_reason": opened_reason, "reason": opened_reason,
                 "entry_price_sol": market_price_sol, "liquidity_sol": liquidity_sol,
                 "confluence": confluence, "mode": engine.cfg.mode, "signature": trade.signature,
+                "tape": ai_tape, "early_quality": ai_early_q,
                 "strategy": "ai" if is_ai_signal else "copy", "ai_policy": ai_policy if is_ai_signal else None})
     else:
         block = decision.reasons if decision else ["işlem motoru kapalı (yalnızca bildirim)"]

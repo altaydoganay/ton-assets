@@ -313,6 +313,8 @@ def _decision_feed(db: Session, minutes: int, limit: int = 80, since: datetime |
                 "pnl_pct": ctx.get("pnl_pct"),
                 "mode": ctx.get("mode"),
                 "signature": ctx.get("signature"),
+                "tape": ctx.get("tape"),
+                "early_quality": ctx.get("early_quality"),
                 "created_at": r.created_at,
             })
     return feed, reasons, counts

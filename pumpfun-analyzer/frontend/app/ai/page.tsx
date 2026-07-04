@@ -397,6 +397,23 @@ export default function AiTradePage() {
                   <div className="mt-1 flex flex-wrap gap-2 text-[11px] muted">
                     {d.token && <Link href={`/tokens/${d.token}`} className="clickable">{shortAddr(d.token)}</Link>}
                     {d.token_score !== undefined && d.token_score !== null && <span>Skor {fmtNum(d.token_score, 0)}</span>}
+                    {d.early_quality != null && (() => {
+                      const q = Number(d.early_quality);
+                      const c = q >= 55 ? "var(--emerald)" : q >= 40 ? "var(--amber)" : "var(--rose)";
+                      return (
+                        <span className="rounded px-1.5 py-0.5 font-mono tabular-nums"
+                          style={{ color: c, background: `color-mix(in srgb, ${c} 14%, transparent)` }}>
+                          Erken kalite {fmtNum(q, 0)}
+                        </span>
+                      );
+                    })()}
+                    {d.tape && (
+                      <span className="font-mono tabular-nums">
+                        {d.tape.unique_buyers != null ? `${d.tape.unique_buyers} alıcı` : ""}
+                        {d.tape.top_buyer_share != null ? ` · tek cüzdan %${Math.round(Number(d.tape.top_buyer_share) * 100)}` : ""}
+                        {d.tape.buy_sell_ratio != null ? ` · al/sat ${d.tape.buy_sell_ratio}` : ""}
+                      </span>
+                    )}
                     {d.pnl_sol !== undefined && d.pnl_sol !== null && <span>PnL {sol(d.pnl_sol)}</span>}
                     {d.bucket && <span>{d.bucket}</span>}
                   </div>
