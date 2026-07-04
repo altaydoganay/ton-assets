@@ -46,6 +46,16 @@ def _market_snapshot(db: Session, market: MarketProvider, mint: str) -> tuple[fl
     return float(m.get("price_sol", 0.0)), float(m.get("liquidity_usd", 0.0) or 0.0)
 
 
+def _curve_sol(db: Session, mint: str) -> float:
+    """Token'ın tahmini bonding-curve SOL'ü (migration yakınlığı). Bilinmiyorsa 0."""
+    token = db.query(Token).filter(Token.mint == mint).first()
+    m = (token.metrics or {}) if token else {}
+    try:
+        return float(m.get("curve_sol_est") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _decide(pnl_pct: float, peak_pnl_pct: float, drop_from_peak: float, held_min: float,
             tp: float, sl: float, trail: float, trail_act: float, max_hold_min: float,
             stagnant_min: float = 0.0, stagnant_max_pnl: float = 0.0) -> str | None:
@@ -166,18 +176,29 @@ def _hunter_step(db: Session, r: dict, p: dict, st: dict, price: float, liq_usd:
         if trail_pre > 0 and (peak_mult - 1.0) >= trail_act and drop_from_peak >= trail_pre:
             events.append(_sell(db, wallet, mint, qty, price, qty, cost, "trailing", held_min))
             return events, True
-        # ANA PARA ÇIKIŞI — değer principal_mult'e ulaştıysa ana para + tamponu geri al
+        # ANA PARA ÇIKIŞI — değer principal_mult'e ulaştıysa ana para + tamponu geri al.
+        # MIGRATION de-risk: token mezuniyet bölgesine girdiyse (curve_sol_est yüksek)
+        # ve pozisyon kârdaysa, principal_mult'i beklemeden ana parayı ERKEN çıkar
+        # (PumpSwap geçişinde slippage/likidite riski için risksize al).
         principal_mult = float(r.get("ai_principal_mult", 2.5) or 0)
-        if principal_mult > 0 and mult >= principal_mult:
+        trigger_principal = principal_mult > 0 and mult >= principal_mult
+        trigger_migration = False
+        if (bool(r.get("ai_migration_guard_enabled", True)) and bool(r.get("ai_migration_derisk", True))):
+            mig_floor = float(r.get("ai_migration_curve_sol", 75.0) or 0)
+            derisk_min = float(r.get("ai_migration_derisk_min_mult", 1.2) or 0)
+            if mig_floor > 0 and mult >= derisk_min and _curve_sol(db, mint) >= mig_floor:
+                trigger_migration = True
+        if trigger_principal or trigger_migration:
             buffer = float(r.get("ai_principal_fee_buffer", 0.08) or 0)
             recover_sol = cost * (1.0 + buffer)
             sell_qty = min(qty, recover_sol / price)
+            note = " · MOONBAG aktif" + (" · MIGRATION de-risk" if trigger_migration and not trigger_principal else "")
             if sell_qty >= qty * 0.98:
                 # ana para ~tüm pozisyona denk (çok düşük mult) — tam çıkış
                 events.append(_sell(db, wallet, mint, qty, price, qty, cost, "principal_out", held_min))
                 return events, True
             events.append(_sell(db, wallet, mint, sell_qty, price, qty, cost, "principal_out",
-                                held_min, extra_msg=" · MOONBAG aktif"))
+                                held_min, extra_msg=note))
             st["principal_out"] = True
             return events, False
         return events, False

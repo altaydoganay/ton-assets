@@ -116,6 +116,15 @@ DEFAULTS: dict[str, dict] = {
         "ai_momentum_min_mult": 1.3,
         "ai_twox_minutes": 10.0,           # bu süre sonunda 2x'e yaklaşmadıysa çık
         "ai_twox_min_mult": 2.0,
+        # MIGRATION/GRADUATION koruması — pump.fun bonding curve ~85 SOL'da PumpSwap'a
+        # geçer. Bu bölgede likidite/slippage/sellability oynar; AI kör market emri
+        # basmamalı. curve_sol_est bu eşiğe ulaşınca: yeni giriş bloklanır ve elde
+        # pozisyon varsa (kârdaysa) ana para erken çıkarılıp risksize alınır.
+        "ai_migration_guard_enabled": True,
+        "ai_migration_curve_sol": 75.0,    # bu curve SOL üstü = migration bölgesi
+        "ai_migration_block_entry": True,  # migration bölgesinde yeni AI alımı açma
+        "ai_migration_derisk": True,       # migration bölgesinde kârdaki pozisyonun ana parasını erken çıkar
+        "ai_migration_derisk_min_mult": 1.2,  # bu çarpanın altında zorla satma (zararına de-risk yapma)
         # --- AKILLI PARA MUTABAKATI (confluence) ---
         "min_confluence": 1,             # 1 = kapalı; 2 = sadece 2+ takip cüzdanı aynı token'i alınca aç
         "live_min_confluence": 1,        # canlıda hızlı giriş için confluence kapalı
@@ -638,6 +647,9 @@ def seed_defaults(db: Session) -> None:
             "ai_stop_pre_pct": 0.35, "ai_trail_pre_pct": 0.28, "ai_trail_moon_pct": 0.45,
             "ai_momentum_minutes": 4.0, "ai_momentum_min_mult": 1.3,
             "ai_twox_minutes": 10.0, "ai_twox_min_mult": 2.0,
+            "ai_migration_guard_enabled": True, "ai_migration_curve_sol": 75.0,
+            "ai_migration_block_entry": True, "ai_migration_derisk": True,
+            "ai_migration_derisk_min_mult": 1.2,
         }.items():
             risk.setdefault(k, v)
         set_setting(db, "risk", risk)

@@ -217,6 +217,24 @@ def test_hunter_time_2x_exit(db):
     assert _ai_pos(db) == []
 
 
+def test_hunter_migration_derisk_takes_principal_early(db):
+    """Token migration bölgesindeyse (curve_sol_est yüksek) ve kârdaysa, 2.5x'i
+    beklemeden ana para erken çıkarılır (risksize alma)."""
+    from app.models import Token, TokenStatus
+    _ai_risk(db, ai_principal_mult=2.5, ai_migration_guard_enabled=True,
+             ai_migration_derisk=True, ai_migration_curve_sol=75.0,
+             ai_migration_derisk_min_mult=1.2, ai_momentum_minutes=0, ai_twox_minutes=0)
+    db.query(Token).filter(Token.mint == AI_MINT).delete()
+    db.add(Token(mint=AI_MINT, status=TokenStatus.tracked.value, metrics={"curve_sol_est": 80.0}))
+    db.commit()
+    _ai_open(db, qty=100, cost=0.10, minutes_ago=1)
+    # 1.5x — principal_mult (2.5x) altında ama migration bölgesi + kâr → erken de-risk
+    out = manage_positions(db, MutableMarket(0.0015))
+    assert [c["reason"] for c in out] == ["principal_out"]
+    assert len(_ai_pos(db)) == 1  # kalan moonbag açık
+    db.query(Token).filter(Token.mint == AI_MINT).delete(); db.commit()
+
+
 def test_hunter_tiny_qty_position_fully_closes(db):
     """Regresyon: miktarı 0.00'a yuvarlanan AI pozisyonu da tam kapanmalı
     (yönetici artık qty_raw kullanıyor)."""

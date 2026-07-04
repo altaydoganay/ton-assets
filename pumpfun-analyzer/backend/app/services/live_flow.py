@@ -555,6 +555,22 @@ def handle_trade_event(
             return {"action": "skipped", "reason": conc_reason, "strategy": "ai",
                     "wallet": "AI", "token": short_addr(trade.mint), "side": trade.side,
                     "token_score": assessment.total}
+        # MIGRATION/GRADUATION koruması: bonding curve mezuniyet bölgesindeyse
+        # (curve_sol_est yüksek) likidite/slippage oynar ve PumpSwap'a geçişte kör
+        # market emri kötü fill verir → yeni AI girişi açma (bekleme moduna geç).
+        if (bool(risk_cfg.get("ai_migration_guard_enabled", True))
+                and bool(risk_cfg.get("ai_migration_block_entry", True))):
+            curve = float(tok_m.get("curve_sol_est") or 0.0)
+            mig_floor = float(risk_cfg.get("ai_migration_curve_sol", 75.0) or 0.0)
+            if mig_floor > 0 and curve >= mig_floor:
+                reason = f"AI blok: migration bölgesi (curve ~{curve:.0f} SOL ≥ {mig_floor:.0f}) — kör giriş yok"
+                _audit(db, "warning", f"AI alım engellendi — {short_addr(trade.mint)}: {reason}",
+                       {"wallet": "AI_TRADE", "token": trade.mint, "signature": trade.signature,
+                        "reason": reason, "token_score": assessment.total, "curve_sol_est": curve,
+                        "strategy": "ai"})
+                return {"action": "skipped", "reason": reason, "strategy": "ai",
+                        "wallet": "AI", "token": short_addr(trade.mint), "side": trade.side,
+                        "token_score": assessment.total}
 
     # AKILLI PARA MUTABAKATI (confluence): bu token'i son pencerede kaç FARKLI takip
     # cüzdanı aldı? 2+ bağımsız kaliteli cüzdan = çok daha güçlü sinyal. İsteğe bağlı
