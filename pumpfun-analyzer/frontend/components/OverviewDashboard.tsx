@@ -82,8 +82,8 @@ function DecisionStudioHero({ strategy, ai, dataStatus }: { strategy: Mode; ai: 
 function SparkStat({ label, value, sub, tone, series, up }: { label: string; value: string; sub?: string; tone: string; series?: any[]; up?: boolean }) {
   return (
     <div className="relative overflow-hidden rounded-2xl border p-4" style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--card) 90%, transparent)" }}>
-      <div className="text-xs muted">{label}</div>
-      <div className="mt-1 text-2xl font-black tracking-tight" style={{ color: tone }}>{value}</div>
+      <div className="text-[11px] font-semibold uppercase tracking-wide muted">{label}</div>
+      <div className="font-display tabular mt-1 text-2xl font-black tracking-tight" style={{ color: tone }}>{value}</div>
       {sub && <div className="mt-0.5 text-[11px] muted">{sub}</div>}
       {series && series.length > 1 && (
         <div className="mt-2 h-10 opacity-90"><TinyLine data={series} /></div>
@@ -121,7 +121,7 @@ function RiskGauge({ risk }: { risk: any }) {
               strokeDasharray={`${(score / 100) * 264} 264`} />
           </svg>
           <div className="absolute text-center">
-            <div className="text-xl font-black" style={{ color: tone }}>{score}</div>
+            <div className="font-display tabular text-xl font-black" style={{ color: tone }}>{score}</div>
             <div className="text-[9px] muted">/100</div>
           </div>
         </div>
@@ -152,7 +152,7 @@ function PortfolioMini() {
         <b className="flex items-center gap-2"><Wallet size={16} /> Portföy Özeti</b>
         <Link href="/positions" className="text-xs muted">Detay <ArrowRight size={12} className="inline" /></Link>
       </div>
-      <div className="text-3xl font-black">{val != null ? `${fmtNum(val, 3)} SOL` : "—"}</div>
+      <div className="font-display tabular text-3xl font-black">{val != null ? `${fmtNum(val, 3)} SOL` : "—"}</div>
       <div className="text-[11px] muted">{pf?.token_count != null ? `${pf.token_count} token · ${fmtNum(pf?.sol_balance, 3)} SOL nakit` : "cüzdan bağla ya da TRADING_WALLET_ADDRESS ayarla"}</div>
       <div className="mt-2 h-24"><TinyLine data={(perf?.curve || []).map((c: any) => ({ pnl: c.pnl ?? c.equity ?? c.value ?? 0 }))} /></div>
     </div>
@@ -201,9 +201,9 @@ function CopySummary({ ov }: { ov: any }) {
     <div className="card">
       <div className="mb-3 flex items-center gap-2"><CopyCheck size={18} /><b>Copy Trade Özeti</b></div>
       <div className="grid grid-cols-3 gap-2 text-center">
-        <div><div className="text-2xl font-black">{tracked}</div><div className="text-[11px] muted">Takip cüzdanı</div></div>
-        <div><div className="text-2xl font-black text-emerald-500">{wr != null ? `%${fmtNum(wr * 100, 0)}` : "—"}</div><div className="text-[11px] muted">Başarı oranı</div></div>
-        <div><div className="text-2xl font-black" style={{ color: (ov?.pnl?.paper_sol ?? 0) >= 0 ? "var(--emerald)" : "var(--rose)" }}>{fmtNum(ov?.pnl?.paper_sol ?? 0, 3)}</div><div className="text-[11px] muted">Paper PnL (SOL)</div></div>
+        <div><div className="font-display tabular text-2xl font-black">{tracked}</div><div className="text-[11px] muted">Takip cüzdanı</div></div>
+        <div><div className="font-display tabular text-2xl font-black text-emerald-500">{wr != null ? `%${fmtNum(wr * 100, 0)}` : "—"}</div><div className="text-[11px] muted">Başarı oranı</div></div>
+        <div><div className="font-display tabular text-2xl font-black" style={{ color: (ov?.pnl?.paper_sol ?? 0) >= 0 ? "var(--emerald)" : "var(--rose)" }}>{fmtNum(ov?.pnl?.paper_sol ?? 0, 3)}</div><div className="text-[11px] muted">Paper PnL (SOL)</div></div>
       </div>
       <Link href="/copy" className="btn mt-3 w-full justify-center text-xs">Copy panelini gör <ArrowRight size={13} /></Link>
     </div>

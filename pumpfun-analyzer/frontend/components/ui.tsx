@@ -12,8 +12,8 @@ export function StatCard({
   return (
     <div className="stat shine" style={tone ? ({ ["--tone" as any]: tone }) : undefined}>
       {icon && <div className="stat-ico">{icon}</div>}
-      <div className="text-xs muted">{label}</div>
-      <div className="mt-0.5 text-2xl font-extrabold tracking-tight"
+      <div className="text-[11px] font-semibold uppercase tracking-wide muted">{label}</div>
+      <div className="font-display tabular mt-1 text-2xl font-extrabold tracking-tight"
         style={{ color: accent || tone || undefined }}>{value}</div>
       {hint && <div className="mt-1 text-xs muted">{hint}</div>}
     </div>
