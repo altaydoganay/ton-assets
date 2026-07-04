@@ -329,7 +329,7 @@ export default function Leaderboard() {
                   <Ico size={20} />
                 </div>
                 <div className="font-mono text-xs font-semibold">{w.label || shortAddr(w.address)}</div>
-                <div className="mt-1 text-lg font-black" style={{ color: (w.copy_pnl_10s_sol ?? 0) >= 0 ? "var(--emerald)" : "var(--rose)" }}>
+                <div className="font-display tabular mt-1 text-lg font-black" style={{ color: (w.copy_pnl_10s_sol ?? 0) >= 0 ? "var(--emerald)" : "var(--rose)" }}>
                   <CountUp value={w.copy_pnl_10s_sol ?? 0} decimals={4} signed suffix=" ◎" />
                 </div>
                 <div className="mt-0.5 text-[11px] muted">Copy {Math.round(w.copyability_score ?? 0)} · Puan {Math.round(w.score ?? 0)}</div>
@@ -377,7 +377,7 @@ export default function Leaderboard() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left">
+              <tr className="text-left text-[11px] font-semibold uppercase tracking-wide muted">
                 <th className="py-2">#</th>
                 <th>Cüzdan</th>
                 <th>Durum</th>
@@ -410,7 +410,7 @@ export default function Leaderboard() {
                     </span>
                   </td>
                   {COLS.map((c) => (
-                    <td key={c.key} className={c.right ? "text-right" : ""}
+                    <td key={c.key} className={`font-mono tabular-nums ${c.right ? "text-right" : ""}`}
                       style={(c.key === "realized_pnl_sol" || c.key === "copy_pnl_10s_sol" || c.key === "copy_pnl_30s_sol") && r[c.key] != null ? { color: r[c.key] >= 0 ? "var(--emerald)" : "var(--rose)", fontWeight: 600 } : {}}>
                       {c.fmt ? c.fmt(r[c.key], r) : r[c.key]}
                     </td>
