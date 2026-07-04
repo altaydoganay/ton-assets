@@ -63,7 +63,7 @@ export function WalletTable({ path, emptyLabel }: { path: string; emptyLabel?: s
             <div className="card overflow-x-auto p-0">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left">
+                  <tr className="border-b text-left text-[11px] font-semibold uppercase tracking-wide muted">
                     <th className="p-3">Cüzdan</th><th className="p-3">Puan</th><th className="p-3">Durum</th>
                     <th className="p-3">Kapalı Poz.</th><th className="p-3">Başarı</th><th className="p-3">Risk</th>
                   </tr>
@@ -76,8 +76,8 @@ export function WalletTable({ path, emptyLabel }: { path: string; emptyLabel?: s
                       </td>
                       <td className="p-3"><ScoreBadge score={w.latest_score} /></td>
                       <td className="p-3"><StatusBadge status={w.status} /></td>
-                      <td className="p-3">{w.metrics?.closed_positions ?? "—"}</td>
-                      <td className="p-3">{w.metrics?.win_rate !== undefined ? `%${Math.round((w.metrics.win_rate as number) * 100)}` : "—"}</td>
+                      <td className="p-3 font-mono tabular-nums">{w.metrics?.closed_positions ?? "—"}</td>
+                      <td className="p-3 font-mono tabular-nums">{w.metrics?.win_rate !== undefined ? `%${Math.round((w.metrics.win_rate as number) * 100)}` : "—"}</td>
                       <td className="p-3"><RiskFlags flags={w.risk_flags} /></td>
                     </tr>
                   ))}

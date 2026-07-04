@@ -48,7 +48,7 @@ export function TokenTable({ path, emptyLabel }: { path: string; emptyLabel?: st
             <div className="card overflow-x-auto p-0">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left">
+                  <tr className="border-b text-left text-[11px] font-semibold uppercase tracking-wide muted">
                     <th className="p-3">Token</th><th className="p-3">Aşama</th><th className="p-3">Puan</th>
                     <th className="p-3">Durum</th><th className="p-3">Riskler</th>
                   </tr>

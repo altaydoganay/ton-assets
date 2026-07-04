@@ -10,7 +10,7 @@ export function TradeTable({ path, emptyLabel, live }: { path: string; emptyLabe
       {(rows) => (
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr className="text-left muted border-b" style={{ borderColor: "var(--border)" }}>
+            <thead><tr className="border-b text-left text-[11px] font-semibold uppercase tracking-wide muted" style={{ borderColor: "var(--border)" }}>
               <th className="pb-2">Zaman</th><th>Cüzdan</th><th>Token</th><th>Yön</th><th>SOL</th>
               <th>PnL (SOL)</th>{live ? <><th>Durum</th><th>Hata</th></> : <th>Açık</th>}<th>Kart</th>
             </tr></thead>
@@ -23,12 +23,12 @@ export function TradeTable({ path, emptyLabel, live }: { path: string; emptyLabe
                     : "var(--amber)";
                 return (
                   <tr key={r.id} className="border-b last:border-0" style={{ borderColor: "var(--border)" }}>
-                    <td className="py-2 muted">{new Date(r.created_at).toLocaleString("tr-TR")}</td>
-                    <td><Link href={`/wallets/${r.wallet_address}`} className="clickable">{shortAddr(r.wallet_address)}</Link></td>
-                    <td><Link href={`/tokens/${r.token_mint}`} className="clickable">{shortAddr(r.token_mint)}</Link></td>
+                    <td className="py-2 font-mono text-xs tabular-nums muted">{new Date(r.created_at).toLocaleString("tr-TR")}</td>
+                    <td><Link href={`/wallets/${r.wallet_address}`} className="clickable font-mono text-xs">{shortAddr(r.wallet_address)}</Link></td>
+                    <td><Link href={`/tokens/${r.token_mint}`} className="clickable font-mono text-xs">{shortAddr(r.token_mint)}</Link></td>
                     <td><span className={r.side === "buy" ? "text-emerald-500" : "text-red-500"}>{r.side === "buy" ? "Alım" : "Satım"}</span></td>
-                    <td>{fmtNum(r.sol_amount, 4)}</td>
-                    <td className={r.realized_pnl_sol > 0 ? "text-emerald-500" : r.realized_pnl_sol < 0 ? "text-red-500" : ""}>{fmtNum(r.realized_pnl_sol, 4)}</td>
+                    <td className="font-mono tabular-nums">{fmtNum(r.sol_amount, 4)}</td>
+                    <td className={`font-mono tabular-nums ${r.realized_pnl_sol > 0 ? "text-emerald-500" : r.realized_pnl_sol < 0 ? "text-red-500" : ""}`}>{fmtNum(r.realized_pnl_sol, 4)}</td>
                     {live ? (
                       <>
                         <td style={{ color: statusColor, fontWeight: r.status === "failed" ? 700 : 500 }}>{r.status}</td>
