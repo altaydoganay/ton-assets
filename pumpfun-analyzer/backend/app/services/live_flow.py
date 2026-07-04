@@ -646,10 +646,30 @@ def handle_trade_event(
     engine = get_engine(db, signer=signer)
     decision = None
     if engine.cfg.enabled and engine.cfg.mode != "alerts_only":
-        # Cüzdan-bazlı elle SOL override (varsa) — paper sabitini de geçersiz kılar
-        override = None if is_ai_signal else get_setting(db, "copy_overrides").get(trade.trader)
+        # Giriş miktarı:
+        #  - AI avcı (hunter): İLK giriş DAİMA küçük "scout" — körleme büyük girme.
+        #    Skor bandına göre boyutlanır; token davranışı sağlıklı kalırsa çıkışlar
+        #    ana parayı çıkarıp moonbag taşır (position_manager). (Confirm/scale ekleme
+        #    ayrı bir aşamadır; bu sürümde scout girişi uygulanır.)
+        #  - Copy: cüzdan-bazlı elle SOL override (varsa) paper sabitini geçersiz kılar.
+        if is_ai_signal and bool(risk_cfg.get("ai_hunter_enabled", True)):
+            live_mode = str(risk_cfg.get("mode", "paper")) == "live"
+            base = float(risk_cfg.get("fixed_sol_amount", 0.05)) if live_mode else float(risk_cfg.get("paper_trade_sol", 0.01))
+            sc = float(assessment.total or 0)
+            if sc >= 95:
+                frac = float(risk_cfg.get("ai_scout_strong_fraction", 0.55) or 0.55)
+            elif sc >= float(risk_cfg.get("ai_scout_min_score", 80) or 80):
+                frac = float(risk_cfg.get("ai_scout_fraction", 0.35) or 0.35)
+            else:
+                frac = float(risk_cfg.get("ai_scout_fraction", 0.35) or 0.35) * 0.6
+            forced_amount = max(0.0, base * frac)
+        elif is_ai_signal:
+            forced_amount = None
+        else:
+            override = get_setting(db, "copy_overrides").get(trade.trader)
+            forced_amount = float(override) if override else None
         ctx = _ctx(trade, wallet, assessment.total, assessment.vetoed, market_price_sol, liquidity_sol,
-                   forced=float(override) if override else None, follow_lag=follow_lag,
+                   forced=forced_amount, follow_lag=follow_lag,
                    strategy="ai" if is_ai_signal else "copy")
         try:
             decision = engine.on_leader_buy(db, ctx)

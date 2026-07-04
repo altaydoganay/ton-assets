@@ -86,6 +86,36 @@ DEFAULTS: dict[str, dict] = {
         # (ölü pump.fun tokeni geri gelmez; sermaye yeni fırsata dönmeli). 0 = kapalı.
         "stagnant_exit_minutes": 12,
         "stagnant_max_pnl_pct": 0.0,
+        # --- AI PUMP.FUN AVCISI (hunter) — kademeli giriş + ana-para çıkışı + moonbag ---
+        # Yalnızca strategy_mode="ai" ve ai_hunter_enabled iken devrededir. Amaç:
+        # erken yakala, körleme büyük girme; 2-3x'te ANA PARAYI çıkar (kalan risksiz),
+        # 10x'te kalanın %25'ini kâr al, kalanı moonbag olarak GENİŞ trailing ile taşı;
+        # risk bozulunca hızlı çık. Copy modu bu bloktan etkilenmez.
+        "ai_hunter_enabled": True,
+        # Giriş kademeleri — scout girişi paper_trade_sol'ün çarpanıdır (körleme büyük girme).
+        "ai_watch_min_score": 70,          # 70-79: sadece izle (alma)
+        "ai_scout_min_score": 80,          # 80+: küçük scout girişi
+        "ai_scout_fraction": 0.35,         # 80-94 skor scout büyüklüğü (paper_trade_sol ×)
+        "ai_scout_strong_fraction": 0.55,  # 95+ skor: biraz daha büyük, yine kademeli
+        # Ana para çıkışı: değer bu çarpana ulaşınca ana para + fee/slippage tamponu geri alınır.
+        "ai_principal_mult": 2.5,
+        "ai_principal_fee_buffer": 0.08,   # ana para × (1+buffer) kadarını geri al
+        # 10x kâr alımı — ana para çıktıktan SONRA kalanın %'i.
+        "ai_tp10_mult": 10.0,
+        "ai_tp10_fraction": 0.25,
+        # Opsiyonel 25x kâr alımı (ayarlanabilir; varsayılan KAPALI).
+        "ai_tp25_enabled": False,
+        "ai_tp25_mult": 25.0,
+        "ai_tp25_fraction": 0.18,
+        # Stop — ana para ÇIKMADAN önce SERT, çıktıktan sonra GENİŞ (moonbag panik yapmasın).
+        "ai_stop_pre_pct": 0.35,           # ana para öncesi sert stop (-%35)
+        "ai_trail_pre_pct": 0.28,          # ana para öncesi trailing (trail_activate_pct sonrası)
+        "ai_trail_moon_pct": 0.45,         # moonbag geniş trailing (zirveden -%45)
+        # Zaman çıkışları — sadece ana para çıkmadan (sürünen tokende sermaye bekletme).
+        "ai_momentum_minutes": 4.0,        # bu süre sonunda mult < momentum_min ise çık
+        "ai_momentum_min_mult": 1.3,
+        "ai_twox_minutes": 10.0,           # bu süre sonunda 2x'e yaklaşmadıysa çık
+        "ai_twox_min_mult": 2.0,
         # --- AKILLI PARA MUTABAKATI (confluence) ---
         "min_confluence": 1,             # 1 = kapalı; 2 = sadece 2+ takip cüzdanı aynı token'i alınca aç
         "live_min_confluence": 1,        # canlıda hızlı giriş için confluence kapalı
@@ -594,6 +624,24 @@ def seed_defaults(db: Session) -> None:
         risk.setdefault("stagnant_max_pnl_pct", 0.0)
         set_setting(db, "risk", risk)
         set_setting(db, "_meta_smart_exit_v23", {"applied": True})
+
+    # v24: AI PUMP.FUN AVCISI — kademeli giriş + ana-para çıkışı + moonbag.
+    if not db.query(Setting).filter(Setting.key == "_meta_ai_hunter_v24").first():
+        risk = get_setting(db, "risk")
+        for k, v in {
+            "ai_hunter_enabled": True,
+            "ai_watch_min_score": 70, "ai_scout_min_score": 80,
+            "ai_scout_fraction": 0.35, "ai_scout_strong_fraction": 0.55,
+            "ai_principal_mult": 2.5, "ai_principal_fee_buffer": 0.08,
+            "ai_tp10_mult": 10.0, "ai_tp10_fraction": 0.25,
+            "ai_tp25_enabled": False, "ai_tp25_mult": 25.0, "ai_tp25_fraction": 0.18,
+            "ai_stop_pre_pct": 0.35, "ai_trail_pre_pct": 0.28, "ai_trail_moon_pct": 0.45,
+            "ai_momentum_minutes": 4.0, "ai_momentum_min_mult": 1.3,
+            "ai_twox_minutes": 10.0, "ai_twox_min_mult": 2.0,
+        }.items():
+            risk.setdefault(k, v)
+        set_setting(db, "risk", risk)
+        set_setting(db, "_meta_ai_hunter_v24", {"applied": True})
 
 def get_strategy_mode(db: Session) -> str:
     """Aktif işlem motoru: copy veya ai. Hatalı/boş değerlerde copy'ye düşer."""
