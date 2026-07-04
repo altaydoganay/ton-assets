@@ -367,6 +367,51 @@ export function PremiumDonut({ data, label = "Dağılım" }: { data?: { name: st
   );
 }
 
+const AI_SCORE_LABELS: Record<string, string> = {
+  organic_buyers: "Organik erken alıcı",
+  momentum: "Momentum / fiyat",
+  holder_dist: "Holder dağılımı",
+  dev_behavior: "Dev / creator",
+  bot_ratio: "Bot / sniper oranı",
+  sellability: "Satılabilirlik / çıkış",
+  curve_progress: "Curve ilerleme hızı",
+  metadata: "İsim / logo / narrative",
+};
+const AI_SCORE_ORDER = ["organic_buyers", "momentum", "holder_dist", "dev_behavior", "bot_ratio", "sellability", "curve_progress", "metadata"];
+
+function AiScoreBreakdown({ breakdown, band }: { breakdown: Record<string, any>; band?: string }) {
+  const keys = AI_SCORE_ORDER.filter((k) => breakdown[k]);
+  const total = keys.reduce((s, k) => s + Number(breakdown[k]?.points || 0), 0);
+  return (
+    <div className="rounded-2xl border p-3" style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--bg2) 48%, transparent)" }}>
+      <div className="mb-2 flex items-center justify-between">
+        <b className="text-sm">Skor kırılımı (8 bileşen)</b>
+        <span className="font-mono tabular-nums text-sm font-black">
+          {total.toFixed(0)}<span className="muted">/100</span>
+          {band && <span className="ml-2 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase" style={{ color: "var(--violet)", background: "color-mix(in srgb, var(--violet) 14%, transparent)" }}>{band}</span>}
+        </span>
+      </div>
+      <div className="space-y-1.5">
+        {keys.map((k) => {
+          const v = Number(breakdown[k]?.value || 0);
+          const w = Number(breakdown[k]?.weight || 0);
+          const tone = v >= 70 ? "var(--emerald)" : v >= 45 ? "var(--amber)" : "var(--rose)";
+          return (
+            <div key={k} className="flex items-center gap-2 text-[11px]">
+              <span className="w-36 shrink-0 muted">{AI_SCORE_LABELS[k] || k}</span>
+              <span className="h-1.5 flex-1 overflow-hidden rounded-full" style={{ background: "color-mix(in srgb, var(--muted) 20%, transparent)" }}>
+                <span className="block h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, v))}%`, background: tone }} />
+              </span>
+              <span className="w-10 shrink-0 text-right font-mono tabular-nums" style={{ color: tone }}>{v.toFixed(0)}</span>
+              <span className="w-8 shrink-0 text-right font-mono tabular-nums muted">×{w}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function DecisionDrawer({ open, onClose, item, mode = "ai" }: { open: boolean; onClose: () => void; item: any; mode?: Mode }) {
   if (!open) return null;
   const token = item?.token_mint || item?.token?.mint || item?.token || item?.context?.token;
@@ -395,6 +440,7 @@ export function DecisionDrawer({ open, onClose, item, mode = "ai" }: { open: boo
             <div className="mini-kpi"><span>Hold</span><b>{item?.hold_minutes ? `${fmtNum(item.hold_minutes, 1)} dk` : "—"}</b></div>
             <div className="mini-kpi"><span>Skor</span><b>{item?.entry_score ?? item?.token_score ?? item?.token?.score ?? "—"}</b></div>
           </div>
+          {item?.ai_score_breakdown && <AiScoreBreakdown breakdown={item.ai_score_breakdown} band={item?.ai_score_band} />}
           <div className="explain-box good">
             <b>Neden aldı?</b>
             <p>{item?.entry_reason || item?.reason || item?.message || "Bu işlem için kayıtlı açıklama bulunamadı."}</p>

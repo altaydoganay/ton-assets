@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     app_name: str = "Pump.fun Cüzdan Analizcisi"
     # SÜRÜM/BUILD numarası — her anlamlı güncellemede artar. Panelin üst barında
     # ve /health'te gösterilir; deploy'un doğru kodu aldığını buradan doğrularsın.
-    app_build: str = "105"
-    app_build_label: str = "Erken-davranış skor kırılımı (#2): AI karar akışında 'erken kalite' skoru + farklı alıcı / tek-cüzdan / al-sat oranı görünür (tape sinyalleri)"
+    app_build: str = "106"
+    app_build_label: str = "8-bileşenli AI avcı skoru (#2): organik alıcı/momentum/holder/dev/bot/satılabilirlik/curve/metadata ağırlıklı skor AI kapısı+scout boyutunu belirler; karar detayında skor kırılımı"
     environment: Literal["development", "production", "test"] = "development"
     api_prefix: str = "/api"
     secret_key: str = Field(default="degistir-bu-anahtari", description="Uygulama imza anahtarı")

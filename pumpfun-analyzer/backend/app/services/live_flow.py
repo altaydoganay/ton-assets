@@ -404,6 +404,22 @@ def handle_trade_event(
             liquidity_sol=0.0, cached=False,
         )
     token = assessment.token
+    # AI 8-bileşenli avcı skoru (yalnızca AI modu; copy scorer değişmez). Erken
+    # davranış (tape) + holder/dev/curve/metadata bileşenlerini birleştirir; AI
+    # kapısı ve scout boyutu bu skoru kullanır. Güvenlik VETOSU yine assessment'tan.
+    ai_score_res = None
+    eff_score = assessment.total
+    if is_ai_signal:
+        from ..core.scoring.ai_token_scoring import score_ai_token
+        _tm = token.metrics or {}
+        _created = getattr(token, "created_on_chain_at", None) or getattr(token, "first_seen", None)
+        _age_s = 0.0
+        if _created:
+            _c = _created if _created.tzinfo else _created.replace(tzinfo=timezone.utc)
+            _age_s = max(0.0, (datetime.now(timezone.utc) - _c).total_seconds())
+        ai_score_res = score_ai_token(_tm, _tm.get("tape"), age_seconds=_age_s,
+                                      sellable=not assessment.vetoed)
+        eff_score = ai_score_res["total"]
     token_threshold = float(ai_policy.get("ai_min_token_score", 75) if is_ai_signal else get_setting(db, "thresholds").get("token", 70.0))
     if trade.side == "buy" and (str(risk_cfg.get("mode", "paper")) == "live" or is_ai_signal):
         # COPY TRADE: token yaşı takip/copy stratejisi için sert kapıdır.
@@ -453,9 +469,9 @@ def handle_trade_event(
     # GÜVENLİK vetosu uygulanır; asıl sinyal cüzdandır.
     token_gate = str(ai_policy.get("ai_token_gate", "score") if is_ai_signal else risk_cfg.get("token_gate", "safety"))
     if token_gate == "score":
-        token_ok = (not assessment.vetoed) and assessment.total >= token_threshold
+        token_ok = (not assessment.vetoed) and eff_score >= token_threshold
     elif token_gate == "balanced":
-        token_ok = (not assessment.vetoed) and assessment.total >= 55.0
+        token_ok = (not assessment.vetoed) and eff_score >= 55.0
     else:  # safety
         token_ok = not assessment.vetoed
 
@@ -614,7 +630,7 @@ def handle_trade_event(
         "token": short_addr(trade.mint),
         "side": trade.side,
         "wallet_score": wallet.latest_score,
-        "token_score": assessment.total,
+        "token_score": eff_score,
         "token_ok": token_ok,
         "confluence": confluence,
         "cached": assessment.cached,
@@ -693,7 +709,7 @@ def handle_trade_event(
         if is_ai_signal and bool(risk_cfg.get("ai_hunter_enabled", True)):
             live_mode = str(risk_cfg.get("mode", "paper")) == "live"
             base = float(risk_cfg.get("fixed_sol_amount", 0.05)) if live_mode else float(risk_cfg.get("paper_trade_sol", 0.01))
-            sc = float(assessment.total or 0)
+            sc = float(eff_score or 0)
             if sc >= 95:
                 frac = float(risk_cfg.get("ai_scout_strong_fraction", 0.55) or 0.55)
             elif sc >= float(risk_cfg.get("ai_scout_min_score", 80) or 80):
@@ -729,8 +745,8 @@ def handle_trade_event(
         conf_txt = f" · 🔥{confluence} akıllı cüzdan" if confluence >= 2 else ""
         source_label = "AI TRADE" if is_ai_signal else short_addr(trade.trader)
         opened_reason = (
-            f"AI uygun gördü: token skoru {assessment.total:.0f}, kapı {token_gate}, "
-            f"fiyat {'var' if market_price_sol > 0 else 'yok'}, veto {'yok' if not assessment.vetoed else 'var'}"
+            f"AI uygun gördü: avcı skoru {eff_score:.0f} ({ai_score_res['band'] if ai_score_res else '—'}), "
+            f"kapı {token_gate}, fiyat {'var' if market_price_sol > 0 else 'yok'}, veto {'yok' if not assessment.vetoed else 'var'}"
             if is_ai_signal else
             f"Copy uygun: takip cüzdanı, token kapısı {token_gate}, veto {'yok' if not assessment.vetoed else 'var'}"
         )
@@ -743,11 +759,13 @@ def handle_trade_event(
                f"İşlem AÇILDI — {source_label} → {short_addr(trade.mint)} "
                f"({engine.cfg.mode}, {decision.sol_amount:.3f} SOL){conf_txt}",
                {"wallet": wallet.address if is_ai_signal else trade.trader, "token": trade.mint, "wallet_score": wallet.latest_score,
-                "token_score": assessment.total, "sol_amount": decision.sol_amount,
+                "token_score": eff_score, "sol_amount": decision.sol_amount,
                 "opened_reason": opened_reason, "reason": opened_reason,
                 "entry_price_sol": market_price_sol, "liquidity_sol": liquidity_sol,
                 "confluence": confluence, "mode": engine.cfg.mode, "signature": trade.signature,
                 "tape": ai_tape, "early_quality": ai_early_q,
+                "ai_score_breakdown": ai_score_res["breakdown"] if ai_score_res else None,
+                "ai_score_band": ai_score_res["band"] if ai_score_res else None,
                 "strategy": "ai" if is_ai_signal else "copy", "ai_policy": ai_policy if is_ai_signal else None})
     else:
         block = decision.reasons if decision else ["işlem motoru kapalı (yalnızca bildirim)"]
@@ -755,7 +773,8 @@ def handle_trade_event(
                f"Bildirim gönderildi, işlem YOK — {short_addr(trade.trader)} → "
                f"{short_addr(trade.mint)}: {', '.join(block)}",
                {"wallet": wallet.address if is_ai_signal else trade.trader, "token": trade.mint, "wallet_score": wallet.latest_score,
-                "token_score": assessment.total, "blocked": block, "signature": trade.signature,
+                "token_score": eff_score, "blocked": block, "signature": trade.signature,
+                "ai_score_breakdown": ai_score_res["breakdown"] if ai_score_res else None,
                 "strategy": "ai" if is_ai_signal else "copy", "ai_policy": ai_policy if is_ai_signal else None})
     return summary
 

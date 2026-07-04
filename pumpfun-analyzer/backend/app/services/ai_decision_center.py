@@ -315,6 +315,8 @@ def _decision_feed(db: Session, minutes: int, limit: int = 80, since: datetime |
                 "signature": ctx.get("signature"),
                 "tape": ctx.get("tape"),
                 "early_quality": ctx.get("early_quality"),
+                "ai_score_breakdown": ctx.get("ai_score_breakdown"),
+                "ai_score_band": ctx.get("ai_score_band"),
                 "created_at": r.created_at,
             })
     return feed, reasons, counts
