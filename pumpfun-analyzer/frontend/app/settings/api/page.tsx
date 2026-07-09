@@ -101,7 +101,66 @@ export default function ApiSettings() {
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <WeightCard title="Cüzdan Puan Ağırlıkları" weights={walletW} onChange={setWalletW} />
-        <WeightCard title="Token Puan Ağırlıkları" weights={tokenW} onChange={setTokenW} />
+        <WeightCard title="Token Puan Ağırlıkları (Copy)" weights={tokenW} onChange={setTokenW} />
+      </div>
+
+      <AiHunterCriteria />
+    </div>
+  );
+}
+
+// AI modunun 8 bileşenli avcı token skoru — kod tarafında sabit ağırlıklar
+// (score_ai_token). Burada GÖRÜNÜR; eşikler (ana para çıkışı, 10x, stop, migration,
+// tape, confirm/scale) "Strateji & Risk" sekmesinden düzenlenir.
+const AI_CRITERIA: { key: string; label: string; w: number; src: string }[] = [
+  { key: "organic_buyers", label: "Organik erken alıcı kalitesi", w: 20, src: "tape: farklı alıcı, 30sn hız, tek-cüzdan yoğunluğu" },
+  { key: "momentum", label: "Momentum hızı ve fiyat davranışı", w: 20, src: "tape: net SOL akışı, al/sat dengesi" },
+  { key: "holder_dist", label: "Holder dağılımı", w: 15, src: "top10 / insider / holder sayısı" },
+  { key: "dev_behavior", label: "Dev / creator davranışı", w: 15, src: "rugger, rug oranı, dev satışı (tape)" },
+  { key: "bot_ratio", label: "Bot / sniper oranı", w: 10, src: "sniper_ratio ya da tek-cüzdan proxy" },
+  { key: "sellability", label: "Satılabilirlik ve çıkış kalitesi", w: 10, src: "güvenlik vetosu + gerçek satışlar (tape)" },
+  { key: "curve_progress", label: "Bonding curve ilerleme hızı", w: 5, src: "curve_sol / token yaşı (SOL/dk)" },
+  { key: "metadata", label: "İsim / logo / narrative", w: 5, src: "isim, sembol, logo varlığı" },
+];
+const AI_BANDS: { range: string; label: string; tone: string }[] = [
+  { range: "0–69", label: "Alma", tone: "var(--rose)" },
+  { range: "70–79", label: "Sadece izle", tone: "var(--amber)" },
+  { range: "80–87", label: "Scout girişi", tone: "var(--sky)" },
+  { range: "88–94", label: "Scout + confirm", tone: "var(--emerald)" },
+  { range: "95+", label: "Güçlü scout", tone: "var(--violet)" },
+];
+
+function AiHunterCriteria() {
+  return (
+    <div className="card mt-4">
+      <div className="mb-1 flex items-center gap-2">
+        <h2 className="font-semibold">AI Avcı Token Skoru (8 bileşen)</h2>
+        <InfoTip title="AI avcı skoru">
+          AI modu bu 8 bileşenli 100 puanlık skorla karar verir (copy skorundan ayrıdır).
+          Ağırlıklar tasarlanmış bir sistemdir ve sabittir; giriş/çıkış EŞİKLERİ
+          (ana para çıkışı, 10x, stop, migration, tape kapısı, confirm/scale) “Strateji &amp; Risk”
+          sekmesinden düzenlenir. Veri yoksa ilgili bileşen nötr gelir (kör ceza yok).
+        </InfoTip>
+      </div>
+      <p className="text-xs muted mb-3">Toplam 100 · yalnızca AI TRADE modunda geçerli. Bant kararı aşağıda.</p>
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+        {AI_CRITERIA.map((c) => (
+          <div key={c.key} className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2" style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--bg2) 45%, transparent)" }}>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold">{c.label}</div>
+              <div className="text-[11px] muted truncate">{c.src}</div>
+            </div>
+            <span className="font-display tabular shrink-0 rounded-lg px-2 py-1 text-sm font-black" style={{ color: "var(--violet)", background: "color-mix(in srgb, var(--violet) 14%, transparent)" }}>{c.w}</span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {AI_BANDS.map((b) => (
+          <span key={b.range} className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs" style={{ borderColor: `color-mix(in srgb, ${b.tone} 40%, var(--border))` }}>
+            <span className="font-mono tabular-nums font-bold" style={{ color: b.tone }}>{b.range}</span>
+            <span className="muted">{b.label}</span>
+          </span>
+        ))}
       </div>
     </div>
   );
